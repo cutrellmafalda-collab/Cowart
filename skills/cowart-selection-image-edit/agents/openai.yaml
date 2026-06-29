@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cowart Selection Image Edit"
+  short_description: "Generate revised images from selected Cowart images and annotations"
+  default_prompt: "Use $cowart:cowart-selection-image-edit to apply the annotations I selected on the Cowart canvas and place the revised image beside the original."
