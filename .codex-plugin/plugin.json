@@ -1,6 +1,6 @@
 {
   "name": "cowart",
-  "version": "0.1.3",
+  "version": "0.1.3+codex.20260629080356",
   "description": "A local infinite canvas for Codex, powered by tldraw and built for visual thinking, image generation, and annotation-driven edits.",
   "author": {
     "name": "ZHONG XIN",
@@ -32,10 +32,12 @@
       "Local web service",
       "AI image generation",
       "Annotation-driven editing",
+      "Selection-driven editing",
       "Project-local persistence"
     ],
     "defaultPrompt": [
       "Open the Cowart canvas for this project.",
+      "Use my selected Cowart image and annotations to generate a clean revised image beside the original.",
       "Use my Cowart annotation screenshot to generate a clean revised image beside the original.",
       "Generate a new image into the selected Cowart AI image holder."
     ]

@@ -5,6 +5,8 @@ description: Generate new AI images from user-supplied Cowart annotation screens
 
 # Cowart Image Edit
 
+For selection-driven edits where the user selected the source image and annotation shapes directly on the Cowart canvas, use `cowart-selection-image-edit` instead.
+
 Use this skill to turn user-provided Cowart 批注 screenshots into revised AI-generated bitmaps placed next to the corresponding original images.
 
 ## Preconditions

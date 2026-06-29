@@ -4,8 +4,9 @@ import readline from "node:readline";
 import { generateKeyBetween } from "fractional-indexing";
 
 const SERVER_NAME = "Cowart MCP";
-const SERVER_VERSION = "0.1.1";
+const SERVER_VERSION = "0.1.2";
 const TOOL_GET_SELECTION = "get_cowart_selection";
+const TOOL_GET_SELECTED_EDIT_CONTEXT = "get_cowart_selected_edit_context";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -70,6 +71,21 @@ function pageDirName(pageId) {
 
 function pageAssetUrl(pageId, fileName) {
   return `${PAGE_ASSETS_ROUTE}${pageDirName(pageId)}/${encodeURIComponent(fileName)}`;
+}
+
+function pageAssetFilePathFromUrl(args, src) {
+  if (!src || typeof src !== "string" || !src.startsWith(PAGE_ASSETS_ROUTE)) return null;
+
+  const parts = src.slice(PAGE_ASSETS_ROUTE.length).split("/");
+  const pageDir = decodeURIComponent(parts.shift() ?? "");
+  if (!pageDir || parts.length === 0) return null;
+
+  const assetsDir = join(resolveCanvasDir(args), "pages", pageDir, "assets");
+  const filePath = resolve(assetsDir, ...parts.map((part) => decodeURIComponent(part)));
+  if (!isSafeChildPath(assetsDir, filePath)) {
+    throw new Error(`Unsafe page asset path: ${src}`);
+  }
+  return filePath;
 }
 
 function isSafeChildPath(parent, child) {
@@ -248,6 +264,43 @@ function getPageShapes(store, pageId) {
   return shapes;
 }
 
+function getChildShapes(store, parentId) {
+  return Object.values(store).filter((record) => record?.typeName === "shape" && record.parentId === parentId);
+}
+
+function getDescendantShapes(store, shapeId) {
+  const descendants = [];
+  const queue = [...getChildShapes(store, shapeId)];
+  while (queue.length > 0) {
+    const shape = queue.shift();
+    descendants.push(shape);
+    queue.push(...getChildShapes(store, shape.id));
+  }
+  return descendants;
+}
+
+function extractRichTextText(value) {
+  if (!value || typeof value !== "object") return "";
+  const chunks = [];
+  const queue = [value];
+  while (queue.length > 0) {
+    const node = queue.shift();
+    if (!node || typeof node !== "object") continue;
+    if (typeof node.text === "string") chunks.push(node.text);
+    if (Array.isArray(node.content)) queue.push(...node.content);
+  }
+  return chunks.join("").trim();
+}
+
+function textFromShape(shape) {
+  const parts = [
+    extractRichTextText(shape?.props?.richText),
+    typeof shape?.props?.text === "string" ? shape.props.text.trim() : "",
+    typeof shape?.props?.label === "string" ? shape.props.label.trim() : "",
+  ].filter(Boolean);
+  return [...new Set(parts)].join("\n");
+}
+
 function localBoundsForShape(shape) {
   if (!shape || shape.typeName !== "shape") return null;
   if (shape.type === "arrow") {
@@ -278,6 +331,64 @@ function pageBoundsForShape(store, shape) {
     parent = store[parent.parentId];
   }
   return { x, y, w: local.w, h: local.h };
+}
+
+function pagePointForShapeLocalPoint(store, shape, point) {
+  let x = finiteNumber(shape?.x, 0) + finiteNumber(point?.x, 0);
+  let y = finiteNumber(shape?.y, 0) + finiteNumber(point?.y, 0);
+  let parent = store[shape?.parentId];
+  const visited = new Set([shape?.id]);
+  while (parent?.typeName === "shape" && !visited.has(parent.id)) {
+    visited.add(parent.id);
+    x += finiteNumber(parent.x, 0);
+    y += finiteNumber(parent.y, 0);
+    parent = store[parent.parentId];
+  }
+  return { x, y };
+}
+
+function annotationSummaryForShape(store, shape) {
+  const bounds = pageBoundsForShape(store, shape);
+  const text = textFromShape(shape);
+  const result = {
+    id: shape.id,
+    type: shape.type,
+    parentId: shape.parentId,
+    bounds,
+    text,
+    meta: shape.meta ?? {},
+  };
+  if (shape.type === "arrow") {
+    result.targetPoint = pagePointForShapeLocalPoint(store, shape, shape.props?.end ?? { x: 0, y: 0 });
+    result.startPoint = pagePointForShapeLocalPoint(store, shape, shape.props?.start ?? { x: 0, y: 0 });
+    result.color = shape.props?.color ?? null;
+  }
+  return result;
+}
+
+function selectedShapeRecords(selection, store) {
+  return (selection?.selectedShapes ?? [])
+    .map((selected) => store[selected?.id] ?? selected)
+    .filter((shape) => shape?.typeName === "shape" || typeof shape?.id === "string");
+}
+
+function imageShapeFromSelectedShape(store, shape) {
+  if (shape?.type === "image" && shape.props?.assetId) return shape;
+  if (shape?.type === "frame" || shape?.meta?.cowartAiImageHolder === true || shape?.isAiImageHolder === true) {
+    return getDescendantShapes(store, shape.id).find((candidate) => candidate?.type === "image" && candidate.props?.assetId) ?? null;
+  }
+  return null;
+}
+
+function aiFrameAncestorForImage(store, imageShape) {
+  let parent = store[imageShape?.parentId];
+  const visited = new Set([imageShape?.id]);
+  while (parent?.typeName === "shape" && !visited.has(parent.id)) {
+    visited.add(parent.id);
+    if (parent.type === "frame" && parent.meta?.cowartAiImageHolder === true) return parent;
+    parent = store[parent.parentId];
+  }
+  return null;
 }
 
 function rectsOverlap(a, b, padding = 0) {
@@ -481,6 +592,91 @@ async function insertCowartImage(args = {}) {
   };
 }
 
+async function getSelectedEditContext(args = {}) {
+  const { selection, selectionFile } = await readSelectionState(args);
+  const { cowartUrl, snapshot } = await loadCanvasSnapshot(args);
+  const store = snapshot.store;
+  const selectedShapes = selectedShapeRecords(selection, store);
+  const selectedShapeIds = selectedShapes.map((shape) => shape.id);
+  if (selectedShapes.length === 0) {
+    return {
+      cowartUrl,
+      selectionFile,
+      selectedShapeIds,
+      warnings: ["No Cowart shapes are selected."],
+      annotations: [],
+    };
+  }
+
+  const imageCandidates = selectedShapes
+    .map((shape) => imageShapeFromSelectedShape(store, shape))
+    .filter(Boolean);
+  const uniqueImageCandidates = [...new Map(imageCandidates.map((shape) => [shape.id, shape])).values()];
+  const sourceImageShape = uniqueImageCandidates[0] ?? null;
+  const sourceAsset = sourceImageShape?.props?.assetId ? store[sourceImageShape.props.assetId] : null;
+  const sourceFrameShape = sourceImageShape ? aiFrameAncestorForImage(store, sourceImageShape) : null;
+  const selectedFrame = selectedShapes.find((shape) => shape?.id === sourceFrameShape?.id) ?? null;
+  const anchorShape = sourceFrameShape ?? selectedFrame ?? sourceImageShape;
+  const pageId = sourceImageShape ? findPageIdForShape(store, sourceImageShape.id) : null;
+
+  const sourceAssetPath = sourceAsset?.props?.src ? pageAssetFilePathFromUrl(args, sourceAsset.props.src) : null;
+  const annotationShapes = selectedShapes.filter((shape) => shape.id !== sourceImageShape?.id && shape.id !== sourceFrameShape?.id);
+  const annotations = annotationShapes.map((shape) => annotationSummaryForShape(store, shape));
+  const promptBrief = annotations
+    .map((annotation) => annotation.text)
+    .filter(Boolean)
+    .join("\n");
+  const warnings = [];
+  if (uniqueImageCandidates.length > 1) warnings.push("Multiple source images are selected; using the first selected image.");
+  if (!sourceImageShape) warnings.push("No selected image or AI image holder with an image was found.");
+  if (sourceAsset?.props?.src && !sourceAssetPath) warnings.push(`Image asset is not a page-local Cowart asset: ${sourceAsset.props.src}`);
+  if (annotations.length === 0) warnings.push("No annotation shapes are selected with the source image.");
+  if (annotations.length > 0 && !promptBrief) {
+    warnings.push("Selected annotations do not contain readable text; visual marks may still require a screenshot or manual instruction.");
+  }
+
+  return {
+    cowartUrl,
+    selectionFile,
+    selectedShapeIds,
+    pageId,
+    anchorShapeId: anchorShape?.id ?? null,
+    sourceImageShape: sourceImageShape
+      ? {
+          id: sourceImageShape.id,
+          parentId: sourceImageShape.parentId,
+          bounds: pageBoundsForShape(store, sourceImageShape),
+          props: sourceImageShape.props,
+          meta: sourceImageShape.meta ?? {},
+        }
+      : null,
+    sourceFrameShape: sourceFrameShape
+      ? {
+          id: sourceFrameShape.id,
+          parentId: sourceFrameShape.parentId,
+          bounds: pageBoundsForShape(store, sourceFrameShape),
+          props: sourceFrameShape.props,
+          meta: sourceFrameShape.meta ?? {},
+        }
+      : null,
+    sourceAsset: sourceAsset
+      ? {
+          id: sourceAsset.id,
+          name: sourceAsset.props?.name ?? null,
+          src: sourceAsset.props?.src ?? null,
+          localFilePath: sourceAssetPath,
+          w: sourceAsset.props?.w ?? null,
+          h: sourceAsset.props?.h ?? null,
+          mimeType: sourceAsset.props?.mimeType ?? null,
+          fileSize: sourceAsset.props?.fileSize ?? null,
+        }
+      : null,
+    annotations,
+    promptBrief,
+    warnings,
+  };
+}
+
 function toolDefinitions() {
   return [
     {
@@ -498,6 +694,36 @@ function toolDefinitions() {
           canvasDir: {
             type: "string",
             description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    {
+      name: TOOL_GET_SELECTED_EDIT_CONTEXT,
+      title: "Get Cowart Selected Edit Context",
+      description:
+        "Return the selected Cowart source image, page-local image file path, annotation text/arrows, anchor shape, and placement context for selection-driven image edits.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/ state.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          cowartUrl: {
+            type: "string",
+            description: "Running Cowart URL, for example http://127.0.0.1:43217.",
           },
         },
         additionalProperties: false,
@@ -570,6 +796,27 @@ async function handleToolCall(id, params) {
     return;
   }
 
+  if (params?.name === TOOL_GET_SELECTED_EDIT_CONTEXT) {
+    const context = await getSelectedEditContext(params.arguments ?? {});
+    const summary = context.sourceAsset
+      ? [
+          `Source image: ${context.sourceImageShape?.id ?? "unknown"} (${context.sourceAsset.name ?? context.sourceAsset.id})`,
+          `Source file: ${context.sourceAsset.localFilePath ?? context.sourceAsset.src ?? "unresolved"}`,
+          `Anchor: ${context.anchorShapeId ?? "none"}`,
+          context.promptBrief ? `Annotations:\n${context.promptBrief}` : "Annotations: none",
+          context.warnings?.length ? `Warnings:\n${context.warnings.join("\n")}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : `No selected Cowart source image was found.\n${context.warnings?.join("\n") ?? ""}`.trim();
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: context,
+    });
+    return;
+  }
+
   if (params?.name === TOOL_INSERT_IMAGE) {
     const result = await insertCowartImage(params.arguments ?? {});
     sendResult(id, {
@@ -599,7 +846,7 @@ async function handleRequest(message) {
         version: SERVER_VERSION,
       },
       instructions:
-        "Read and update Cowart canvas state. Use get_cowart_selection for persisted browser selection and insert_cowart_image to place local bitmap assets into the running Cowart canvas without hand-writing tldraw records.",
+        "Read and update Cowart canvas state. Use get_cowart_selection for persisted browser selection, get_cowart_selected_edit_context for selected image+annotation edit briefs, and insert_cowart_image to place local bitmap assets into the running Cowart canvas without hand-writing tldraw records.",
     });
     return;
   }
