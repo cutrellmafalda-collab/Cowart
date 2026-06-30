@@ -52,7 +52,11 @@ import {
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
 import { createHtmlArtboardDocument } from './html-runtime/htmlCanvasDocument.js'
-import { htmlArtboardToCowartShape } from './html-runtime/cowartHtmlBridge.js'
+import {
+  cowartShapeToHtmlArtboard,
+  htmlArtboardToCowartShape
+} from './html-runtime/cowartHtmlBridge.js'
+import { createHtmlArtboardPreviewSrcDoc } from './html-runtime/htmlArtboardPreview.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -645,7 +649,46 @@ function CowartStylePanel(props) {
     <DefaultStylePanel {...props}>
       <DefaultStylePanelContent />
       <CowartAiImageStyleControls />
+      <CowartHtmlArtboardPreviewControls />
     </DefaultStylePanel>
+  )
+}
+
+function CowartHtmlArtboardPreviewControls() {
+  const editor = useEditor()
+  const runtimeDocument = useValue(
+    'selected html artboard document',
+    () => {
+      const selectedShapeIds = editor.getSelectedShapeIds()
+      if (selectedShapeIds.length !== 1) return null
+
+      const shape = editor.getShape(selectedShapeIds[0])
+      return cowartShapeToHtmlArtboard(shape)
+    },
+    [editor]
+  )
+
+  if (!runtimeDocument) return null
+
+  const srcDoc = createHtmlArtboardPreviewSrcDoc(runtimeDocument)
+
+  return (
+    <div className="cowart-html-artboard-preview-panel" aria-label="HTML Artboard preview">
+      <section className="cowart-html-preview-section">
+        <div className="cowart-html-preview-heading">
+          <span>HTML Artboard</span>
+          <span>
+            {runtimeDocument.width} × {runtimeDocument.height}
+          </span>
+        </div>
+        <iframe
+          className="cowart-html-preview-frame"
+          sandbox=""
+          srcDoc={srcDoc}
+          title="HTML Artboard preview"
+        />
+      </section>
+    </div>
   )
 }
 

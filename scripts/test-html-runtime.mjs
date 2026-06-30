@@ -10,6 +10,7 @@ import {
   htmlArtboardToCowartShape,
   isCowartHtmlArtboardShape
 } from '../src/html-runtime/cowartHtmlBridge.js'
+import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
 import {
   createRenderFingerprint,
   validateRenderFingerprint,
@@ -192,6 +193,60 @@ test('validateRenderFingerprint returns mismatch when document changes after fin
 
   assert.equal(result.status, 'mismatch')
   assert.equal(result.matches, false)
+})
+
+test('preview srcdoc returns string', () => {
+  const srcDoc = createHtmlArtboardPreviewSrcDoc(createHtmlArtboardDocument())
+
+  assert.equal(typeof srcDoc, 'string')
+})
+
+test('preview srcdoc includes html', () => {
+  const srcDoc = createHtmlArtboardPreviewSrcDoc({
+    html: '<section><h1>Preview HTML</h1></section>'
+  })
+
+  assert.equal(srcDoc.includes('<section><h1>Preview HTML</h1></section>'), true)
+})
+
+test('preview srcdoc includes css', () => {
+  const srcDoc = createHtmlArtboardPreviewSrcDoc({
+    css: '.preview { color: rgb(1 2 3); }'
+  })
+
+  assert.equal(srcDoc.includes('.preview { color: rgb(1 2 3); }'), true)
+})
+
+test('preview srcdoc includes doctype/html/body', () => {
+  const srcDoc = createHtmlArtboardPreviewSrcDoc(createHtmlArtboardDocument())
+
+  assert.equal(srcDoc.includes('<!doctype html>'), true)
+  assert.equal(srcDoc.includes('<html>'), true)
+  assert.equal(srcDoc.includes('<body>'), true)
+})
+
+test('preview helper does not mutate input', () => {
+  const document = {
+    id: 'html-artboard:preview-mutation',
+    html: '<section>Stable</section>',
+    css: '.stable { color: black; }',
+    fusionPatches: [{ id: 'patch:stable', value: 'Original' }]
+  }
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardPreviewSrcDoc(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('preview helper works with partial document', () => {
+  const srcDoc = createHtmlArtboardPreviewSrcDoc({
+    html: '<main>Partial</main>'
+  })
+
+  assert.equal(srcDoc.includes('<main>Partial</main>'), true)
+  assert.equal(srcDoc.includes('Cowart HTML Artboard'), false)
+  assert.equal(srcDoc.includes('<style>'), true)
 })
 
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {
