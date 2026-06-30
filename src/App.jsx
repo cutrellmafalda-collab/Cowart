@@ -51,6 +51,8 @@ import {
   isCanvasSnapshot,
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
+import { createHtmlArtboardDocument } from './html-runtime/htmlCanvasDocument.js'
+import { htmlArtboardToCowartShape } from './html-runtime/cowartHtmlBridge.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -58,6 +60,8 @@ const SELECTION_ENDPOINT = '/api/selection'
 const VIEW_STATE_ENDPOINT = '/api/view-state'
 const SELECTION_STATE_ELEMENT_ID = 'cowart-selection-state'
 const AI_IMAGE_TOOL_ID = 'ai-image'
+const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
+const HTML_ARTBOARD_TOOL_LABEL = 'HTML Artboard'
 const AI_IMAGE_HOLDER_LABEL = 'AI 图片'
 const AI_IMAGE_HOLDER_DEFAULT_W = 512
 const AI_IMAGE_HOLDER_DEFAULT_H = 683
@@ -239,6 +243,31 @@ function createAiImageHolderAtViewportCenter(editor) {
     props: { w, h }
   })
   editor.select(id)
+  editor.setCurrentTool('select.idle')
+}
+
+function createHtmlArtboardAtViewportCenter(editor) {
+  const document = createHtmlArtboardDocument()
+  const shapeId = createShapeId()
+  const center = editor.getViewportPageBounds().center
+  const x = center.x - document.width / 2
+  const y = center.y - document.height / 2
+  const bridgeShape = htmlArtboardToCowartShape(document, {
+    shapeId,
+    x,
+    y,
+    name: HTML_ARTBOARD_TOOL_LABEL
+  })
+
+  editor.createShape({
+    id: shapeId,
+    type: 'frame',
+    x: bridgeShape.x,
+    y: bridgeShape.y,
+    props: bridgeShape.props,
+    meta: bridgeShape.meta
+  })
+  editor.select(shapeId)
   editor.setCurrentTool('select.idle')
 }
 
@@ -537,10 +566,12 @@ const cowartUiOverrides = {
   translations: {
     en: {
       'tool.ai-image': AI_IMAGE_HOLDER_LABEL,
+      'tool.html-artboard': HTML_ARTBOARD_TOOL_LABEL,
       'tool.cowart-annotation': ANNOTATION_TOOL_LABEL
     },
     'zh-cn': {
       'tool.ai-image': AI_IMAGE_HOLDER_LABEL,
+      'tool.html-artboard': HTML_ARTBOARD_TOOL_LABEL,
       'tool.cowart-annotation': ANNOTATION_TOOL_LABEL
     }
   },
@@ -574,6 +605,17 @@ const cowartUiOverrides = {
         },
         meta: {
           cowartTool: 'ai-image-holder'
+        }
+      },
+      [HTML_ARTBOARD_TOOL_ID]: {
+        id: HTML_ARTBOARD_TOOL_ID,
+        label: 'tool.html-artboard',
+        icon: 'tool-frame',
+        onSelect() {
+          createHtmlArtboardAtViewportCenter(editor)
+        },
+        meta: {
+          cowartTool: 'html-artboard'
         }
       },
       [ANNOTATION_TOOL_ID]: {
@@ -868,6 +910,7 @@ function CowartToolbar(props) {
       <SelectToolbarItem />
       <HandToolbarItem />
       <CowartToolbarItem toolId={AI_IMAGE_TOOL_ID} />
+      <CowartToolbarItem toolId={HTML_ARTBOARD_TOOL_ID} />
       <CowartToolbarDivider />
       <AssetToolbarItem />
       <DrawToolbarItem />

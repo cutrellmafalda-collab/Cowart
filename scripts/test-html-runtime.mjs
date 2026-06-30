@@ -239,6 +239,28 @@ test('htmlArtboardToCowartShape creates frame shape JSON', () => {
   assert.notEqual(shape.meta.runtimeDocument, document)
 })
 
+test('htmlArtboardToCowartShape exposes fields for tldraw frame partial', () => {
+  const shape = htmlArtboardToCowartShape(createHtmlArtboardDocument(), {
+    shapeId: 'shape:html-artboard-partial',
+    name: 'HTML Artboard'
+  })
+  const partial = {
+    id: shape.id,
+    type: shape.type,
+    x: shape.x,
+    y: shape.y,
+    props: shape.props,
+    meta: shape.meta
+  }
+
+  assert.equal(partial.type, 'frame')
+  assert.equal(partial.meta.cowartHtmlArtboard, true)
+  assert.equal(Boolean(partial.meta.runtimeDocument), true)
+  assert.equal(typeof partial.props.w, 'number')
+  assert.equal(typeof partial.props.h, 'number')
+  assert.equal(partial.props.name, 'HTML Artboard')
+})
+
 test('frame props width/height maps from document', () => {
   const document = createHtmlArtboardDocument({
     id: 'html-artboard:size',
