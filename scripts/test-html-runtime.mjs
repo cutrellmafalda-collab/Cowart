@@ -6,6 +6,11 @@ import {
   ensureHtmlArtboardDocument
 } from '../src/html-runtime/htmlCanvasDocument.js'
 import {
+  cowartShapeToHtmlArtboard,
+  htmlArtboardToCowartShape,
+  isCowartHtmlArtboardShape
+} from '../src/html-runtime/cowartHtmlBridge.js'
+import {
   createRenderFingerprint,
   validateRenderFingerprint,
   withRenderFingerprint
@@ -187,4 +192,152 @@ test('validateRenderFingerprint returns mismatch when document changes after fin
 
   assert.equal(result.status, 'mismatch')
   assert.equal(result.matches, false)
+})
+
+test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {
+  assert.equal(isCowartHtmlArtboardShape({ meta: { cowartHtmlArtboard: true } }), true)
+})
+
+test('isCowartHtmlArtboardShape returns false for normal frame shape', () => {
+  assert.equal(
+    isCowartHtmlArtboardShape({
+      typeName: 'shape',
+      type: 'frame',
+      meta: {}
+    }),
+    false
+  )
+})
+
+test('htmlArtboardToCowartShape creates frame shape JSON', () => {
+  const document = createHtmlArtboardDocument({ id: 'html-artboard:bridge' })
+  const shape = htmlArtboardToCowartShape(document, {
+    shapeId: 'shape:custom-html-artboard',
+    x: 32,
+    y: 64,
+    parentId: 'page:1',
+    index: 'a1',
+    name: 'Poster Artboard'
+  })
+
+  assert.equal(shape.id, 'shape:custom-html-artboard')
+  assert.equal(shape.typeName, 'shape')
+  assert.equal(shape.type, 'frame')
+  assert.equal(shape.x, 32)
+  assert.equal(shape.y, 64)
+  assert.equal(shape.rotation, 0)
+  assert.equal(shape.isLocked, false)
+  assert.equal(shape.opacity, 1)
+  assert.equal(shape.parentId, 'page:1')
+  assert.equal(shape.index, 'a1')
+  assert.equal(shape.props.name, 'Poster Artboard')
+  assert.equal(shape.props.color, 'blue')
+  assert.equal(shape.meta.cowartHtmlArtboard, true)
+  assert.equal(shape.meta.cowartHtmlArtboardVersion, 1)
+  assert.equal(shape.meta.htmlArtboardId, document.id)
+  assert.deepEqual(shape.meta.runtimeDocument, document)
+  assert.notEqual(shape.meta.runtimeDocument, document)
+})
+
+test('frame props width/height maps from document', () => {
+  const document = createHtmlArtboardDocument({
+    id: 'html-artboard:size',
+    width: 1080,
+    height: 1920
+  })
+  const shape = htmlArtboardToCowartShape(document)
+
+  assert.equal(shape.props.w, 1080)
+  assert.equal(shape.props.h, 1920)
+})
+
+test('bridge round-trip preserves html/css/fusionPatches', () => {
+  const fusionPatches = [
+    {
+      id: 'patch:round-trip',
+      target: 'h1',
+      operation: 'replaceText',
+      value: 'Round Trip'
+    }
+  ]
+  const document = createHtmlArtboardDocument({
+    id: 'html-artboard:round-trip',
+    html: '<section><h1>Round Trip</h1></section>',
+    css: 'section { display: grid; }',
+    fusionPatches
+  })
+  const restored = cowartShapeToHtmlArtboard(htmlArtboardToCowartShape(document))
+
+  assert.equal(restored.html, document.html)
+  assert.equal(restored.css, document.css)
+  assert.deepEqual(restored.fusionPatches, fusionPatches)
+})
+
+test('cowartShapeToHtmlArtboard returns null for non-html-artboard shape', () => {
+  assert.equal(
+    cowartShapeToHtmlArtboard({
+      typeName: 'shape',
+      type: 'frame',
+      meta: {}
+    }),
+    null
+  )
+})
+
+test('cowartShapeToHtmlArtboard handles missing runtimeDocument safely', () => {
+  assert.equal(
+    cowartShapeToHtmlArtboard({
+      typeName: 'shape',
+      type: 'frame',
+      meta: { cowartHtmlArtboard: true },
+      props: {}
+    }),
+    null
+  )
+})
+
+test('cowartShapeToHtmlArtboard supports props.document fallback', () => {
+  const document = createHtmlArtboardDocument({
+    id: 'html-artboard:fallback',
+    html: '<section>Fallback</section>'
+  })
+  const restored = cowartShapeToHtmlArtboard({
+    typeName: 'shape',
+    type: 'frame',
+    meta: { cowartHtmlArtboard: true },
+    props: { document }
+  })
+
+  assert.equal(restored.id, document.id)
+  assert.equal(restored.html, document.html)
+  assert.notEqual(restored, document)
+})
+
+test('runtimeDocument is cloned, modifying restored value should not mutate original shape meta', () => {
+  const shape = htmlArtboardToCowartShape(
+    createHtmlArtboardDocument({
+      id: 'html-artboard:restore-clone',
+      fusionPatches: [{ id: 'patch:clone', value: 'Original' }]
+    })
+  )
+  const restored = cowartShapeToHtmlArtboard(shape)
+
+  restored.fusionPatches[0].value = 'Changed'
+
+  assert.equal(shape.meta.runtimeDocument.fusionPatches[0].value, 'Original')
+})
+
+test('htmlArtboardToCowartShape clones input document, modifying original after conversion should not mutate shape meta', () => {
+  const document = createHtmlArtboardDocument({
+    id: 'html-artboard:input-clone',
+    html: '<section>Original</section>',
+    fusionPatches: [{ id: 'patch:input-clone', value: 'Original' }]
+  })
+  const shape = htmlArtboardToCowartShape(document)
+
+  document.html = '<section>Changed</section>'
+  document.fusionPatches[0].value = 'Changed'
+
+  assert.equal(shape.meta.runtimeDocument.html, '<section>Original</section>')
+  assert.equal(shape.meta.runtimeDocument.fusionPatches[0].value, 'Original')
 })
