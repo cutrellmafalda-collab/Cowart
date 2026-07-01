@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build --configLoader native",
     "test:html-runtime": "node scripts/test-html-runtime.mjs",
+    "test:mcp-html-artboard": "node scripts/test-mcp-html-artboard.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

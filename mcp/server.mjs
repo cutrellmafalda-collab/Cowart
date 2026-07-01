@@ -2,10 +2,16 @@ import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import readline from "node:readline";
 import { generateKeyBetween } from "fractional-indexing";
+import { createHtmlArtboardExportBundle } from "../src/html-runtime/htmlArtboardExport.js";
+import {
+  extractSelectedHtmlArtboards,
+  summarizeSelectedHtmlArtboards,
+} from "./htmlArtboardSelection.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
 const TOOL_GET_SELECTION = "get_cowart_selection";
+const TOOL_GET_SELECTED_HTML_ARTBOARD = "get_cowart_selected_html_artboard";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -301,6 +307,27 @@ function firstSelectedShapeId(selection) {
   return selection?.selectedShapes?.length === 1 ? selection.selectedShapes[0]?.id : null;
 }
 
+function htmlArtboardForMcp(artboard, { includeSource = true, includeJson = true } = {}) {
+  const exportBundle = createHtmlArtboardExportBundle(artboard.runtimeDocument);
+  const payload = {
+    shapeId: artboard.shapeId,
+    shapeType: artboard.shapeType,
+    summary: artboard.summary,
+    runtimeDocument: artboard.runtimeDocument,
+  };
+
+  if (includeSource) {
+    payload.html = exportBundle.html;
+    payload.css = exportBundle.css;
+  }
+
+  if (includeJson) {
+    payload.json = exportBundle.json;
+  }
+
+  return payload;
+}
+
 function choosePlacement({ store, pageId, parentId, anchorShape, width, height, margin, placement }) {
   const anchorBounds = anchorShape ? pageBoundsForShape(store, anchorShape) : null;
   let x = anchorBounds ? anchorBounds.x + anchorBounds.w + margin : 0;
@@ -510,6 +537,40 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_GET_SELECTED_HTML_ARTBOARD,
+      title: "Get Selected Cowart HTML Artboard",
+      description:
+        "Return the currently selected Cowart HTML Artboard runtime document from the project's canvas/cowart-selection.json state file.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          includeSource: {
+            type: "boolean",
+            description: "Include top-level html and css fields in structuredContent. Defaults to true.",
+          },
+          includeJson: {
+            type: "boolean",
+            description: "Include formatted runtime document JSON in structuredContent. Defaults to true.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -570,6 +631,26 @@ async function handleToolCall(id, params) {
     return;
   }
 
+  if (params?.name === TOOL_GET_SELECTED_HTML_ARTBOARD) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeSource = args.includeSource !== false;
+    const includeJson = args.includeJson !== false;
+
+    sendResult(id, {
+      content: [{ type: "text", text: summarizeSelectedHtmlArtboards(htmlArtboards) }],
+      structuredContent: {
+        selectionFile,
+        count: htmlArtboards.length,
+        htmlArtboards: htmlArtboards.map((artboard) =>
+          htmlArtboardForMcp(artboard, { includeSource, includeJson })
+        ),
+      },
+    });
+    return;
+  }
+
   if (params?.name === TOOL_INSERT_IMAGE) {
     const result = await insertCowartImage(params.arguments ?? {});
     sendResult(id, {
@@ -599,7 +680,7 @@ async function handleRequest(message) {
         version: SERVER_VERSION,
       },
       instructions:
-        "Read and update Cowart canvas state. Use get_cowart_selection for persisted browser selection and insert_cowart_image to place local bitmap assets into the running Cowart canvas without hand-writing tldraw records.",
+        "Read and update Cowart canvas state. Use get_cowart_selection for persisted browser selection, get_cowart_selected_html_artboard for read-only HTML Artboard runtime documents, and insert_cowart_image to place local bitmap assets into the running Cowart canvas without hand-writing tldraw records.",
     });
     return;
   }
