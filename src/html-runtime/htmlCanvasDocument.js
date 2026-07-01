@@ -1,3 +1,5 @@
+import { normalizeFusionPatches } from './fusionPatch.js'
+
 const HTML_ARTBOARD_TYPE = 'cowart-html-artboard'
 const HTML_ARTBOARD_VERSION = 1
 const DEFAULT_WIDTH = 720
@@ -117,7 +119,7 @@ export function ensureHtmlArtboardDocument(document = {}) {
   ensured.background = isRecord(source.background) ? deepClone(source.background) : deepClone(DEFAULT_BACKGROUND)
   ensured.html = typeof source.html === 'string' ? source.html : DEFAULT_HTML
   ensured.css = typeof source.css === 'string' ? source.css : DEFAULT_CSS
-  ensured.fusionPatches = normalizeArray(source.fusionPatches)
+  ensured.fusionPatches = normalizeFusionPatches(source.fusionPatches)
   ensured.assets = normalizeArray(source.assets)
   ensured.history = normalizeArray(source.history)
   ensured.mutationLog = normalizeArray(source.mutationLog)

@@ -52,6 +52,7 @@ import {
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
 import { createHtmlArtboardDocument } from './html-runtime/htmlCanvasDocument.js'
+import { addFusionPatchPlaceholderToHtmlArtboard } from './html-runtime/htmlArtboardFusionPatches.js'
 import {
   cowartShapeToHtmlArtboard,
   htmlArtboardToCowartShape
@@ -700,6 +701,11 @@ function CowartHtmlArtboardPreviewControls() {
         selectedShape={shape}
       />
       <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
+      <CowartHtmlArtboardFusionPatches
+        editor={editor}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+      />
     </div>
   )
 }
@@ -902,6 +908,65 @@ function CowartHtmlArtboardMutationLog({ runtimeDocument }) {
           ))}
         </ol>
       )}
+    </section>
+  )
+}
+
+function formatFusionPatchRegion(region) {
+  if (!region || typeof region !== 'object') return 'Region: none'
+
+  return `Region: x ${region.x}, y ${region.y}, w ${region.w}, h ${region.h}`
+}
+
+function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShape }) {
+  const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
+    ? runtimeDocument.fusionPatches
+    : []
+
+  function addMockFusionPatch() {
+    const updatedDocument = addFusionPatchPlaceholderToHtmlArtboard(runtimeDocument)
+
+    editor.markHistoryStoppingPoint('add-html-artboard-fusion-patch')
+    editor.updateShapes([
+      {
+        id: selectedShape.id,
+        type: selectedShape.type,
+        meta: {
+          ...selectedShape.meta,
+          cowartHtmlArtboard: true,
+          runtimeDocument: updatedDocument
+        }
+      }
+    ])
+  }
+
+  return (
+    <section className="cowart-html-fusion-patches" aria-label="HTML Artboard fusion patches">
+      <div className="cowart-html-preview-heading">
+        <span>Fusion Patches</span>
+        <span>Total: {fusionPatches.length}</span>
+      </div>
+      {fusionPatches.length === 0 ? (
+        <p className="cowart-html-fusion-empty">No fusion patches yet.</p>
+      ) : (
+        <ol className="cowart-html-fusion-list">
+          {fusionPatches.map((patch) => (
+            <li key={patch.id} className="cowart-html-fusion-item">
+              <div className="cowart-html-fusion-meta">
+                <span>{patch.name}</span>
+                <span>
+                  {patch.status} · {patch.provider} · {patch.visible === false ? 'Hidden' : 'Visible'}
+                </span>
+              </div>
+              <p>{patch.prompt}</p>
+              <code>{formatFusionPatchRegion(patch.region)}</code>
+            </li>
+          ))}
+        </ol>
+      )}
+      <button className="cowart-html-fusion-add" onClick={addMockFusionPatch} type="button">
+        Add Mock Fusion Patch
+      </button>
     </section>
   )
 }

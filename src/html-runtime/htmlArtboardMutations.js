@@ -1,5 +1,13 @@
 import { ensureHtmlArtboardDocument } from './htmlCanvasDocument.js'
 
+const FALLBACK_MUTATION_TYPE = 'document_meta_update'
+export const HTML_ARTBOARD_MUTATION_TYPES = [
+  'html_update',
+  'css_update',
+  'document_meta_update',
+  'fusion_patch_create'
+]
+
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -20,12 +28,17 @@ function createMutationId(type) {
   return `mutation:${type}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+function normalizeMutationType(type) {
+  return typeof type === 'string' && type ? type : FALLBACK_MUTATION_TYPE
+}
+
 export function createHtmlArtboardMutation(type, payload = {}, options = {}) {
+  const mutationType = normalizeMutationType(type)
   const meta = isRecord(options.meta) ? deepClone(options.meta) : {}
 
   return {
-    id: typeof options.id === 'string' && options.id ? options.id : createMutationId(type),
-    type,
+    id: typeof options.id === 'string' && options.id ? options.id : createMutationId(mutationType),
+    type: mutationType,
     timestamp:
       typeof options.timestamp === 'string' && options.timestamp
         ? options.timestamp

@@ -414,6 +414,97 @@ body {
   white-space: nowrap;
 }
 
+.cowart-html-fusion-patches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.cowart-html-fusion-empty {
+  margin: 0;
+  color: var(--tl-color-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cowart-html-fusion-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  gap: 6px;
+  list-style: none;
+}
+
+.cowart-html-fusion-item {
+  display: grid;
+  padding: 8px;
+  gap: 6px;
+  background: var(--tl-color-muted-2);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-fusion-item p {
+  margin: 0;
+  color: var(--tl-color-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cowart-html-fusion-item code {
+  overflow: hidden;
+  color: var(--tl-color-text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cowart-html-fusion-meta {
+  display: grid;
+  gap: 3px;
+}
+
+.cowart-html-fusion-meta span:first-child {
+  overflow: hidden;
+  color: var(--tl-color-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cowart-html-fusion-meta span:last-child {
+  overflow: hidden;
+  color: var(--tl-color-text-2);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cowart-html-fusion-add {
+  height: 28px;
+  padding: 0 10px;
+  align-self: flex-start;
+  color: var(--tl-color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+  cursor: pointer;
+}
+
+.cowart-html-fusion-add:hover {
+  background: var(--tl-color-muted-2);
+}
+
 .cowart-ai-image-style-panel {
   display: flex;
   flex-direction: column;

@@ -11,6 +11,7 @@ import {
   isCowartHtmlArtboardShape
 } from '../src/html-runtime/cowartHtmlBridge.js'
 import { updateHtmlArtboardSource } from '../src/html-runtime/htmlArtboardEditing.js'
+import { addFusionPatchPlaceholderToHtmlArtboard } from '../src/html-runtime/htmlArtboardFusionPatches.js'
 import {
   appendHtmlArtboardMutations,
   createHtmlArtboardMutation,
@@ -18,6 +19,12 @@ import {
 } from '../src/html-runtime/htmlArtboardMutations.js'
 import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
 import { createHtmlArtboardSourceSnapshot } from '../src/html-runtime/htmlArtboardSource.js'
+import {
+  cloneFusionPatch,
+  createFusionPatchPlaceholder,
+  ensureFusionPatch,
+  normalizeFusionPatches
+} from '../src/html-runtime/fusionPatch.js'
 import {
   createRenderFingerprint,
   validateRenderFingerprint,
@@ -100,8 +107,14 @@ test('ensureHtmlArtboardDocument preserves existing html/css/fusionPatches', () 
 
   assert.equal(document.html, '<section><h1>Existing</h1></section>')
   assert.equal(document.css, 'h1 { color: red; }')
-  assert.deepEqual(document.fusionPatches, fusionPatches)
+  assert.equal(document.fusionPatches.length, 1)
+  assert.equal(document.fusionPatches[0].id, 'patch:headline')
+  assert.equal(document.fusionPatches[0].type, 'fusion-patch')
+  assert.equal(document.fusionPatches[0].target, 'h1')
+  assert.equal(document.fusionPatches[0].operation, 'replaceText')
+  assert.equal(document.fusionPatches[0].value, 'Existing headline')
   assert.notEqual(document.fusionPatches, fusionPatches)
+  assert.notEqual(document.fusionPatches[0], fusionPatches[0])
 })
 
 test('cloneHtmlArtboardDocument performs deep clone', () => {
@@ -137,15 +150,162 @@ test('runtime document does not include UI fields', () => {
   assertNoUiFields(cloned)
 })
 
+test('createFusionPatchPlaceholder returns required fields', () => {
+  const patch = createFusionPatchPlaceholder()
+  const requiredFields = [
+    'id',
+    'type',
+    'name',
+    'selector',
+    'sourceSelector',
+    'sourceText',
+    'region',
+    'prompt',
+    'maskAssetId',
+    'patchAssetId',
+    'patchAssetUrl',
+    'blendMode',
+    'opacity',
+    'provider',
+    'seed',
+    'status',
+    'visible',
+    'createdAt',
+    'updatedAt',
+    'meta'
+  ]
+
+  for (const field of requiredFields) {
+    assert.equal(Object.hasOwn(patch, field), true)
+  }
+})
+
+test('createFusionPatchPlaceholder defaults type to fusion-patch', () => {
+  const patch = createFusionPatchPlaceholder()
+
+  assert.equal(patch.type, 'fusion-patch')
+  assert.equal(patch.name, 'Mock Fusion Patch')
+  assert.equal(patch.provider, 'mock')
+  assert.equal(patch.status, 'placeholder')
+  assert.equal(patch.visible, true)
+})
+
+test('createFusionPatchPlaceholder includes asset fields maskAssetId/patchAssetId/patchAssetUrl', () => {
+  const patch = createFusionPatchPlaceholder()
+
+  assert.equal(patch.maskAssetId, null)
+  assert.equal(patch.patchAssetId, null)
+  assert.equal(patch.patchAssetUrl, null)
+})
+
+test('ensureFusionPatch normalizes legacy ai-fusion-placeholder', () => {
+  const patch = ensureFusionPatch({
+    id: 'legacy:patch',
+    type: 'ai-fusion-placeholder',
+    name: 'Legacy Patch'
+  })
+
+  assert.equal(patch.id, 'legacy:patch')
+  assert.equal(patch.type, 'fusion-patch')
+  assert.equal(patch.name, 'Legacy Patch')
+})
+
+test('ensureFusionPatch preserves selector/sourceText/prompt/region', () => {
+  const patch = ensureFusionPatch({
+    selector: '[data-node="hero"]',
+    sourceText: 'Hero',
+    prompt: 'Make the hero brighter',
+    region: { x: 12, y: 24, w: 320, h: 180 }
+  })
+
+  assert.equal(patch.selector, '[data-node="hero"]')
+  assert.equal(patch.sourceSelector, '[data-node="hero"]')
+  assert.equal(patch.sourceText, 'Hero')
+  assert.equal(patch.prompt, 'Make the hero brighter')
+  assert.deepEqual(patch.region, { x: 12, y: 24, w: 320, h: 180 })
+})
+
+test('normalizeFusionPatches returns [] for invalid input', () => {
+  assert.deepEqual(normalizeFusionPatches(null), [])
+  assert.deepEqual(normalizeFusionPatches({ id: 'not-array' }), [])
+})
+
+test('normalizeFusionPatches normalizes each patch', () => {
+  const patches = normalizeFusionPatches([
+    { id: 'patch:a', type: 'ai-fusion-placeholder' },
+    { id: 'patch:b', selector: '.card' }
+  ])
+
+  assert.equal(patches.length, 2)
+  assert.equal(patches[0].type, 'fusion-patch')
+  assert.equal(patches[1].type, 'fusion-patch')
+  assert.equal(patches[1].sourceSelector, '.card')
+})
+
+test('cloneFusionPatch deep clones', () => {
+  const patch = createFusionPatchPlaceholder({
+    id: 'patch:clone',
+    region: { x: 1, y: 2, w: 3, h: 4 },
+    meta: { nested: { value: 'Original' } }
+  })
+  const cloned = cloneFusionPatch(patch)
+
+  cloned.region.x = 100
+  cloned.meta.nested.value = 'Changed'
+
+  assert.equal(patch.region.x, 1)
+  assert.equal(patch.meta.nested.value, 'Original')
+})
+
+test('ensureHtmlArtboardDocument normalizes fusionPatches', () => {
+  const document = ensureHtmlArtboardDocument({
+    fusionPatches: [{ id: 'patch:document-normalize', type: 'ai-fusion-placeholder' }]
+  })
+
+  assert.equal(document.fusionPatches.length, 1)
+  assert.equal(document.fusionPatches[0].type, 'fusion-patch')
+})
+
+test('legacy fusion patch in document becomes type fusion-patch', () => {
+  const document = ensureHtmlArtboardDocument({
+    fusionPatches: [
+      {
+        id: 'legacy:document-patch',
+        type: 'ai-fusion-placeholder',
+        selector: '.legacy'
+      }
+    ]
+  })
+
+  assert.equal(document.fusionPatches[0].id, 'legacy:document-patch')
+  assert.equal(document.fusionPatches[0].type, 'fusion-patch')
+  assert.equal(document.fusionPatches[0].selector, '.legacy')
+})
+
+test('ensureHtmlArtboardDocument preserves fusion patch count', () => {
+  const document = ensureHtmlArtboardDocument({
+    fusionPatches: [{ id: 'patch:one' }, { id: 'patch:two' }]
+  })
+
+  assert.equal(document.fusionPatches.length, 2)
+})
+
 test('createRenderFingerprint returns stable string', () => {
+  const patch = {
+    id: 'fusion-patch:stable',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    b: 2,
+    a: 1
+  }
   const first = createHtmlArtboardDocument({
     background: { type: 'gradient', identity: 'background:stable', colors: ['#fff', '#111'] },
-    fusionPatches: [{ b: 2, a: 1 }]
+    fusionPatches: [patch]
   })
   const second = createHtmlArtboardDocument({
     id: first.id,
     background: { colors: ['#fff', '#111'], identity: 'background:stable', type: 'gradient' },
-    fusionPatches: [{ a: 1, b: 2 }]
+    fusionPatches: [{ a: 1, b: 2, id: patch.id, createdAt: patch.createdAt, updatedAt: patch.updatedAt }]
   })
 
   assert.equal(typeof createRenderFingerprint(first), 'string')
@@ -169,11 +329,20 @@ test('renderFingerprint changes when css changes', () => {
 })
 
 test('renderFingerprint changes when fusionPatches changes', () => {
-  const document = createHtmlArtboardDocument({ fusionPatches: [{ id: 'patch:1', value: 'A' }] })
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      {
+        id: 'patch:1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        value: 'A'
+      }
+    ]
+  })
   const before = createRenderFingerprint(document)
   const after = createRenderFingerprint({
     ...document,
-    fusionPatches: [{ id: 'patch:1', value: 'B' }]
+    fusionPatches: [{ ...document.fusionPatches[0], value: 'B' }]
   })
 
   assert.notEqual(before, after)
@@ -298,7 +467,10 @@ test('parsed source snapshot json contains fusionPatches', () => {
   const snapshot = createHtmlArtboardSourceSnapshot({ fusionPatches })
   const parsed = JSON.parse(snapshot.json)
 
-  assert.deepEqual(parsed.fusionPatches, fusionPatches)
+  assert.equal(parsed.fusionPatches.length, 1)
+  assert.equal(parsed.fusionPatches[0].id, 'patch:source')
+  assert.equal(parsed.fusionPatches[0].type, 'fusion-patch')
+  assert.equal(parsed.fusionPatches[0].value, 'Source patch')
 })
 
 test('source snapshot helper does not mutate input', () => {
@@ -398,7 +570,14 @@ test('updateHtmlArtboardSource updates css', () => {
 })
 
 test('updateHtmlArtboardSource preserves fusionPatches', () => {
-  const fusionPatches = [{ id: 'patch:preserve', value: 'Original' }]
+  const fusionPatches = [
+    createFusionPatchPlaceholder({
+      id: 'patch:preserve',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      value: 'Original'
+    })
+  ]
   const document = createHtmlArtboardDocument({ fusionPatches })
   const updated = updateHtmlArtboardSource(document, { html: '<section>Changed</section>' })
 
@@ -573,6 +752,69 @@ test('mutation meta.source is html-artboard-editor', () => {
   assert.equal(updated.mutationLog[0].meta.source, 'html-artboard-editor')
 })
 
+test('addFusionPatchPlaceholderToHtmlArtboard appends patch', () => {
+  const document = createHtmlArtboardDocument()
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(document, { id: 'patch:add' })
+
+  assert.equal(updated.fusionPatches.length, 1)
+  assert.equal(updated.fusionPatches[0].id, 'patch:add')
+  assert.equal(updated.fusionPatches[0].type, 'fusion-patch')
+})
+
+test('addFusionPatchPlaceholderToHtmlArtboard does not mutate input', () => {
+  const document = createHtmlArtboardDocument()
+  const before = JSON.stringify(document)
+
+  addFusionPatchPlaceholderToHtmlArtboard(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('addFusionPatchPlaceholderToHtmlArtboard recalculates renderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(document)
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('addFusionPatchPlaceholderToHtmlArtboard appends fusion_patch_create mutation by default', () => {
+  const document = createHtmlArtboardDocument()
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(document)
+
+  assert.equal(updated.mutationLog.length, 1)
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_create')
+})
+
+test('addFusionPatchPlaceholderToHtmlArtboard with recordMutationLog false does not append mutation', () => {
+  const existingMutation = createHtmlArtboardMutation('document_meta_update', { value: 'existing' })
+  const document = createHtmlArtboardDocument({ mutationLog: [existingMutation] })
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(document, {
+    id: 'patch:no-mutation',
+    recordMutationLog: false
+  })
+
+  assert.equal(updated.fusionPatches.length, 1)
+  assert.deepEqual(updated.mutationLog, [existingMutation])
+})
+
+test('fusion_patch_create mutation payload includes patchId and patch', () => {
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(createHtmlArtboardDocument(), {
+    id: 'patch:payload'
+  })
+  const mutation = updated.mutationLog[0]
+
+  assert.equal(mutation.payload.patchId, 'patch:payload')
+  assert.equal(mutation.payload.patch.id, 'patch:payload')
+  assert.equal(mutation.payload.patch.type, 'fusion-patch')
+})
+
+test('fusion_patch_create mutation meta.source is html-artboard-fusion-patch-panel', () => {
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(createHtmlArtboardDocument())
+
+  assert.equal(updated.mutationLog[0].meta.source, 'html-artboard-fusion-patch-panel')
+})
+
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {
   assert.equal(isCowartHtmlArtboardShape({ meta: { cowartHtmlArtboard: true } }), true)
 })
@@ -654,12 +896,13 @@ test('frame props width/height maps from document', () => {
 
 test('bridge round-trip preserves html/css/fusionPatches', () => {
   const fusionPatches = [
-    {
+    createFusionPatchPlaceholder({
       id: 'patch:round-trip',
-      target: 'h1',
-      operation: 'replaceText',
-      value: 'Round Trip'
-    }
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      selector: 'h1',
+      prompt: 'Round Trip'
+    })
   ]
   const document = createHtmlArtboardDocument({
     id: 'html-artboard:round-trip',
