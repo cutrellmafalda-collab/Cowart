@@ -22,6 +22,11 @@ import {
   createSourceUpdateMutations
 } from '../src/html-runtime/htmlArtboardMutations.js'
 import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
+import {
+  createHtmlArtboardExportBundle,
+  createHtmlArtboardExportFileName,
+  createHtmlArtboardStandaloneHtml
+} from '../src/html-runtime/htmlArtboardExport.js'
 import { createHtmlArtboardSourceSnapshot } from '../src/html-runtime/htmlArtboardSource.js'
 import {
   cloneFusionPatch,
@@ -579,6 +584,147 @@ test('source snapshot works with partial document through ensureHtmlArtboardDocu
   assert.equal(parsed.html, '<main>Partial source</main>')
   assert.equal(parsed.type, 'cowart-html-artboard')
   assert.equal(parsed.meta.provider, 'mock')
+})
+
+test('createHtmlArtboardExportBundle returns html/css/json/standaloneHtml', () => {
+  const bundle = createHtmlArtboardExportBundle(createHtmlArtboardDocument())
+
+  assert.equal(typeof bundle.html, 'string')
+  assert.equal(typeof bundle.css, 'string')
+  assert.equal(typeof bundle.json, 'string')
+  assert.equal(typeof bundle.standaloneHtml, 'string')
+})
+
+test('export bundle html preserves document.html', () => {
+  const bundle = createHtmlArtboardExportBundle({
+    html: '<section><h1>Export HTML</h1></section>'
+  })
+
+  assert.equal(bundle.html, '<section><h1>Export HTML</h1></section>')
+})
+
+test('export bundle css preserves document.css', () => {
+  const bundle = createHtmlArtboardExportBundle({
+    css: '.export { color: blue; }'
+  })
+
+  assert.equal(bundle.css, '.export { color: blue; }')
+})
+
+test('export bundle json is valid JSON', () => {
+  const bundle = createHtmlArtboardExportBundle(createHtmlArtboardDocument())
+
+  assert.doesNotThrow(() => JSON.parse(bundle.json))
+})
+
+test('export bundle json contains type cowart-html-artboard', () => {
+  const bundle = createHtmlArtboardExportBundle(createHtmlArtboardDocument())
+  const parsed = JSON.parse(bundle.json)
+
+  assert.equal(parsed.type, 'cowart-html-artboard')
+})
+
+test('export bundle json contains fusionPatches', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [createFusionPatchPlaceholder({ id: 'patch:export' })]
+  })
+  const parsed = JSON.parse(createHtmlArtboardExportBundle(document).json)
+
+  assert.equal(Array.isArray(parsed.fusionPatches), true)
+  assert.equal(parsed.fusionPatches.length, 1)
+  assert.equal(parsed.fusionPatches[0].id, 'patch:export')
+})
+
+test('export bundle json contains mutationLog', () => {
+  const mutation = createHtmlArtboardMutation('document_meta_update', { exported: true })
+  const document = createHtmlArtboardDocument({ mutationLog: [mutation] })
+  const parsed = JSON.parse(createHtmlArtboardExportBundle(document).json)
+
+  assert.equal(Array.isArray(parsed.mutationLog), true)
+  assert.equal(parsed.mutationLog.length, 1)
+  assert.equal(parsed.mutationLog[0].type, 'document_meta_update')
+})
+
+test('createHtmlArtboardStandaloneHtml returns doctype/html/head/body', () => {
+  const standaloneHtml = createHtmlArtboardStandaloneHtml(createHtmlArtboardDocument())
+
+  assert.equal(standaloneHtml.includes('<!doctype html>'), true)
+  assert.equal(standaloneHtml.includes('<html>'), true)
+  assert.equal(standaloneHtml.includes('<head>'), true)
+  assert.equal(standaloneHtml.includes('<body>'), true)
+})
+
+test('standaloneHtml includes document.html', () => {
+  const standaloneHtml = createHtmlArtboardStandaloneHtml({
+    html: '<section><h1>Standalone HTML</h1></section>'
+  })
+
+  assert.equal(standaloneHtml.includes('<section><h1>Standalone HTML</h1></section>'), true)
+})
+
+test('standaloneHtml includes document.css', () => {
+  const standaloneHtml = createHtmlArtboardStandaloneHtml({
+    css: '.standalone { color: green; }'
+  })
+
+  assert.equal(standaloneHtml.includes('.standalone { color: green; }'), true)
+})
+
+test('standaloneHtml includes CSP script-src none', () => {
+  const standaloneHtml = createHtmlArtboardStandaloneHtml(createHtmlArtboardDocument())
+
+  assert.equal(standaloneHtml.includes("script-src 'none'"), true)
+})
+
+test('standaloneHtml does not include generated script tags', () => {
+  const standaloneHtml = createHtmlArtboardStandaloneHtml(createHtmlArtboardDocument())
+
+  assert.equal(/<script\b/i.test(standaloneHtml), false)
+})
+
+test('export helpers do not mutate input', () => {
+  const document = {
+    html: '<section>Stable export</section>',
+    css: '.stable-export { color: black; }',
+    fusionPatches: [{ id: 'patch:export-stable', value: 'Original' }]
+  }
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardExportBundle(document)
+  createHtmlArtboardStandaloneHtml(document)
+  createHtmlArtboardExportFileName(document, 'json')
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('export helpers work with partial document through ensureHtmlArtboardDocument', () => {
+  const bundle = createHtmlArtboardExportBundle({
+    html: '<main>Partial export</main>'
+  })
+  const parsed = JSON.parse(bundle.json)
+
+  assert.equal(bundle.html, '<main>Partial export</main>')
+  assert.equal(parsed.type, 'cowart-html-artboard')
+  assert.equal(bundle.standaloneHtml.includes('<main>Partial export</main>'), true)
+})
+
+test('createHtmlArtboardExportFileName returns safe filename', () => {
+  const filename = createHtmlArtboardExportFileName(
+    createHtmlArtboardDocument({
+      meta: { exportName: 'Poster / Draft: 01?' }
+    }),
+    'json'
+  )
+
+  assert.equal(filename.includes('/'), false)
+  assert.equal(filename.includes(':'), false)
+  assert.equal(filename.includes('?'), false)
+  assert.equal(filename, 'poster-draft-01.json')
+})
+
+test('createHtmlArtboardExportFileName applies extension', () => {
+  assert.equal(createHtmlArtboardExportFileName({ meta: { exportName: 'Source' } }, 'html'), 'source.html')
+  assert.equal(createHtmlArtboardExportFileName({ meta: { exportName: 'Styles' } }, 'css'), 'styles.css')
 })
 
 test('createHtmlArtboardMutation returns required fields', () => {

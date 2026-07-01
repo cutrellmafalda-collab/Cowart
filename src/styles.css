@@ -564,6 +564,62 @@ body {
   background: var(--tl-color-muted-2);
 }
 
+.cowart-html-export {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.cowart-html-export-note {
+  margin: 0;
+  color: var(--tl-color-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cowart-html-export-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.cowart-html-export-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 8px;
+  gap: 7px;
+  background: var(--tl-color-muted-2);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-export-row > span {
+  overflow: hidden;
+  color: var(--tl-color-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cowart-html-export-button {
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--tl-color-text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+  cursor: pointer;
+}
+
+.cowart-html-export-button:hover {
+  background: #fff;
+}
+
 .cowart-ai-image-style-panel {
   display: flex;
   flex-direction: column;

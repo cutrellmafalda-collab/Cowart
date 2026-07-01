@@ -60,6 +60,10 @@ import {
 } from './html-runtime/cowartHtmlBridge.js'
 import { updateHtmlArtboardSource } from './html-runtime/htmlArtboardEditing.js'
 import { createHtmlArtboardPreviewSrcDoc } from './html-runtime/htmlArtboardPreview.js'
+import {
+  createHtmlArtboardExportBundle,
+  createHtmlArtboardExportFileName
+} from './html-runtime/htmlArtboardExport.js'
 import { createHtmlArtboardSourceSnapshot } from './html-runtime/htmlArtboardSource.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
@@ -707,6 +711,7 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
+      <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
     </div>
   )
 }
@@ -1031,6 +1036,147 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
       <button className="cowart-html-fusion-add" onClick={addMockFusionPatch} type="button">
         Add Mock Fusion Patch
       </button>
+    </section>
+  )
+}
+
+function getExportDocumentWithName(runtimeDocument, exportName) {
+  return {
+    ...runtimeDocument,
+    meta: {
+      ...runtimeDocument.meta,
+      exportName
+    }
+  }
+}
+
+function CowartHtmlArtboardExportControls({ runtimeDocument }) {
+  const [exportStatus, setExportStatus] = useState('')
+  const exportBundle = useMemo(
+    () => createHtmlArtboardExportBundle(runtimeDocument),
+    [runtimeDocument]
+  )
+  const exportItems = [
+    {
+      id: 'runtime-json',
+      label: 'Runtime JSON',
+      copyLabel: 'Copy Runtime JSON',
+      downloadLabel: 'Download Runtime JSON',
+      value: exportBundle.json,
+      mimeType: 'application/json',
+      fileName: createHtmlArtboardExportFileName(
+        getExportDocumentWithName(runtimeDocument, 'html-artboard-runtime'),
+        'json'
+      )
+    },
+    {
+      id: 'html',
+      label: 'HTML',
+      copyLabel: 'Copy HTML',
+      downloadLabel: 'Download HTML',
+      value: exportBundle.html,
+      mimeType: 'text/html',
+      fileName: createHtmlArtboardExportFileName(
+        getExportDocumentWithName(runtimeDocument, 'html-artboard-source'),
+        'html'
+      )
+    },
+    {
+      id: 'css',
+      label: 'CSS',
+      copyLabel: 'Copy CSS',
+      downloadLabel: 'Download CSS',
+      value: exportBundle.css,
+      mimeType: 'text/css',
+      fileName: createHtmlArtboardExportFileName(
+        getExportDocumentWithName(runtimeDocument, 'html-artboard-styles'),
+        'css'
+      )
+    },
+    {
+      id: 'standalone-html',
+      label: 'Standalone HTML',
+      copyLabel: 'Copy Standalone HTML',
+      downloadLabel: 'Download Standalone HTML',
+      value: exportBundle.standaloneHtml,
+      mimeType: 'text/html',
+      fileName: createHtmlArtboardExportFileName(
+        getExportDocumentWithName(runtimeDocument, 'html-artboard-standalone'),
+        'html'
+      )
+    }
+  ]
+
+  useEffect(() => {
+    setExportStatus('')
+  }, [exportBundle.json, exportBundle.html, exportBundle.css, exportBundle.standaloneHtml])
+
+  async function copyExportItem(item) {
+    if (!navigator.clipboard?.writeText) {
+      setExportStatus('Copy failed')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(item.value)
+      setExportStatus('Copied')
+    } catch {
+      setExportStatus('Copy failed')
+    }
+  }
+
+  function downloadExportItem(item) {
+    if (!window.URL?.createObjectURL) {
+      setExportStatus('Download failed')
+      return
+    }
+
+    let objectUrl = ''
+    try {
+      const blob = new Blob([item.value], { type: `${item.mimeType};charset=utf-8` })
+      objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = item.fileName
+      link.click()
+      setExportStatus('Downloaded')
+    } catch {
+      setExportStatus('Download failed')
+    } finally {
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl)
+      }
+    }
+  }
+
+  return (
+    <section className="cowart-html-export" aria-label="HTML Artboard export">
+      <div className="cowart-html-preview-heading">
+        <span>Export</span>
+        {exportStatus ? <span>{exportStatus}</span> : null}
+      </div>
+      <p className="cowart-html-export-note">Exports runtime document content only.</p>
+      <div className="cowart-html-export-grid">
+        {exportItems.map((item) => (
+          <div key={item.id} className="cowart-html-export-row">
+            <span>{item.label}</span>
+            <button
+              className="cowart-html-export-button"
+              onClick={() => copyExportItem(item)}
+              type="button"
+            >
+              {item.copyLabel}
+            </button>
+            <button
+              className="cowart-html-export-button"
+              onClick={() => downloadExportItem(item)}
+              type="button"
+            >
+              {item.downloadLabel}
+            </button>
+          </div>
+        ))}
+      </div>
     </section>
   )
 }
