@@ -44,7 +44,7 @@ import {
 } from 'tldraw'
 import { AllSelection } from '@tiptap/pm/state'
 import 'tldraw/tldraw.css'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import annotationToolIconRaw from './assets/tool-comment.svg?raw'
 import {
   describeSkippedRecord,
@@ -53,6 +53,7 @@ import {
 } from './canvasSnapshot.js'
 import { createHtmlArtboardDocument } from './html-runtime/htmlCanvasDocument.js'
 import { addFusionPatchPlaceholderToHtmlArtboard } from './html-runtime/htmlArtboardFusionPatches.js'
+import { extractHtmlArtboardPatchTargets } from './html-runtime/htmlArtboardPatchTargets.js'
 import {
   cowartShapeToHtmlArtboard,
   htmlArtboardToCowartShape
@@ -922,9 +923,39 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
   const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
     ? runtimeDocument.fusionPatches
     : []
+  const patchTargets = useMemo(
+    () => extractHtmlArtboardPatchTargets(runtimeDocument),
+    [runtimeDocument.html]
+  )
+  const [selectedTargetId, setSelectedTargetId] = useState('')
+
+  useEffect(() => {
+    setSelectedTargetId((currentTargetId) => {
+      if (patchTargets.some((target) => target.id === currentTargetId)) {
+        return currentTargetId
+      }
+
+      return patchTargets[0]?.id ?? ''
+    })
+  }, [patchTargets, selectedShape.id])
+
+  const selectedTarget =
+    patchTargets.find((target) => target.id === selectedTargetId) ?? patchTargets[0] ?? null
 
   function addMockFusionPatch() {
-    const updatedDocument = addFusionPatchPlaceholderToHtmlArtboard(runtimeDocument)
+    const targetPatchOptions = selectedTarget
+      ? {
+          selector: selectedTarget.selector,
+          sourceSelector: selectedTarget.selector,
+          sourceText: selectedTarget.sourceText,
+          name: selectedTarget.label || selectedTarget.dataNode,
+          prompt: `Mock fusion patch for ${selectedTarget.sourceText || selectedTarget.dataNode}`
+        }
+      : {}
+    const updatedDocument = addFusionPatchPlaceholderToHtmlArtboard(
+      runtimeDocument,
+      targetPatchOptions
+    )
 
     editor.markHistoryStoppingPoint('add-html-artboard-fusion-patch')
     editor.updateShapes([
@@ -946,6 +977,37 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
         <span>Fusion Patches</span>
         <span>Total: {fusionPatches.length}</span>
       </div>
+      <section className="cowart-html-patch-targets" aria-label="HTML Artboard patch targets">
+        <div className="cowart-html-preview-heading">
+          <span>Patch Targets</span>
+          <span>{patchTargets.length} found</span>
+        </div>
+        {patchTargets.length === 0 ? (
+          <p className="cowart-html-patch-target-empty">
+            No data-node patch targets found.
+          </p>
+        ) : (
+          <>
+            <label className="cowart-html-patch-target-select">
+              <span>Target</span>
+              <select
+                value={selectedTarget?.id ?? ''}
+                onChange={(event) => setSelectedTargetId(event.target.value)}
+              >
+                {patchTargets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="cowart-html-patch-target-meta">
+              <code>{selectedTarget?.selector}</code>
+              <span>{selectedTarget?.sourceText || 'No source text.'}</span>
+            </div>
+          </>
+        )}
+      </section>
       {fusionPatches.length === 0 ? (
         <p className="cowart-html-fusion-empty">No fusion patches yet.</p>
       ) : (
@@ -959,6 +1021,8 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
                 </span>
               </div>
               <p>{patch.prompt}</p>
+              {patch.selector ? <code>{patch.selector}</code> : null}
+              {patch.sourceText ? <code>Source: {patch.sourceText}</code> : null}
               <code>{formatFusionPatchRegion(patch.region)}</code>
             </li>
           ))}

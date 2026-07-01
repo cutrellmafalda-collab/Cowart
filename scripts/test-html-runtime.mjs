@@ -13,6 +13,10 @@ import {
 import { updateHtmlArtboardSource } from '../src/html-runtime/htmlArtboardEditing.js'
 import { addFusionPatchPlaceholderToHtmlArtboard } from '../src/html-runtime/htmlArtboardFusionPatches.js'
 import {
+  createSelectorForDataNode,
+  extractHtmlArtboardPatchTargets
+} from '../src/html-runtime/htmlArtboardPatchTargets.js'
+import {
   appendHtmlArtboardMutations,
   createHtmlArtboardMutation,
   createSourceUpdateMutations
@@ -148,6 +152,84 @@ test('runtime document does not include UI fields', () => {
 
   assertNoUiFields(document)
   assertNoUiFields(cloned)
+})
+
+test('extractHtmlArtboardPatchTargets returns data-node targets', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: '<section><h1 data-node="headline">Headline</h1><p data-node="subhead">Subhead</p></section>'
+  })
+
+  assert.equal(targets.length, 2)
+  assert.deepEqual(
+    targets.map((target) => target.dataNode),
+    ['headline', 'subhead']
+  )
+})
+
+test('extractHtmlArtboardPatchTargets returns selector [data-node="headline"]', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: '<h1 data-node="headline">Headline</h1>'
+  })
+
+  assert.equal(targets[0].selector, '[data-node="headline"]')
+})
+
+test('extractHtmlArtboardPatchTargets extracts text content', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: '<button data-node="cta">Start now</button>'
+  })
+
+  assert.equal(targets[0].text, 'Start now')
+  assert.equal(targets[0].sourceText, 'Start now')
+  assert.equal(targets[0].label, 'cta - Start now')
+})
+
+test('extractHtmlArtboardPatchTargets strips nested tags from text', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: '<h1 data-node="headline">Hello <strong>World</strong></h1>'
+  })
+
+  assert.equal(targets[0].sourceText, 'Hello World')
+})
+
+test('extractHtmlArtboardPatchTargets supports single-quoted data-node', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: "<p data-node='single-quote'>Single quoted</p>"
+  })
+
+  assert.equal(targets.length, 1)
+  assert.equal(targets[0].dataNode, 'single-quote')
+  assert.equal(targets[0].selector, '[data-node="single-quote"]')
+})
+
+test('extractHtmlArtboardPatchTargets returns [] when no data-node exists', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: '<section><h1>No target</h1></section>'
+  })
+
+  assert.deepEqual(targets, [])
+})
+
+test('extractHtmlArtboardPatchTargets does not mutate input', () => {
+  const document = {
+    html: '<h1 data-node="headline">Stable</h1>',
+    fusionPatches: [{ id: 'patch:stable', value: 'Original' }]
+  }
+  const before = JSON.stringify(document)
+
+  extractHtmlArtboardPatchTargets(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('createSelectorForDataNode returns null for empty input', () => {
+  assert.equal(createSelectorForDataNode(''), null)
+  assert.equal(createSelectorForDataNode('   '), null)
+  assert.equal(createSelectorForDataNode(null), null)
+})
+
+test('createSelectorForDataNode escapes double quotes/backslashes', () => {
+  assert.equal(createSelectorForDataNode('hero"\\title'), '[data-node="hero\\"\\\\title"]')
 })
 
 test('createFusionPatchPlaceholder returns required fields', () => {
@@ -813,6 +895,65 @@ test('fusion_patch_create mutation meta.source is html-artboard-fusion-patch-pan
   const updated = addFusionPatchPlaceholderToHtmlArtboard(createHtmlArtboardDocument())
 
   assert.equal(updated.mutationLog[0].meta.source, 'html-artboard-fusion-patch-panel')
+})
+
+test('addFusionPatchPlaceholderToHtmlArtboard can create patch with selector', () => {
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(createHtmlArtboardDocument(), {
+    selector: '[data-node="headline"]'
+  })
+
+  assert.equal(updated.fusionPatches[0].selector, '[data-node="headline"]')
+  assert.equal(updated.fusionPatches[0].sourceSelector, '[data-node="headline"]')
+})
+
+test('addFusionPatchPlaceholderToHtmlArtboard can create patch with sourceText', () => {
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(createHtmlArtboardDocument(), {
+    selector: '[data-node="subhead"]',
+    sourceText: 'Helpful subheading'
+  })
+
+  assert.equal(updated.fusionPatches[0].sourceText, 'Helpful subheading')
+})
+
+test('added patch mutation payload includes selector/sourceText', () => {
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(createHtmlArtboardDocument(), {
+    selector: '[data-node="cta"]',
+    sourceText: 'Start now'
+  })
+  const patch = updated.mutationLog[0].payload.patch
+
+  assert.equal(patch.selector, '[data-node="cta"]')
+  assert.equal(patch.sourceSelector, '[data-node="cta"]')
+  assert.equal(patch.sourceText, 'Start now')
+})
+
+test('adding targeted patch preserves existing fusionPatches', () => {
+  const existingPatch = createFusionPatchPlaceholder({
+    id: 'patch:existing',
+    selector: '[data-node="existing"]',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z'
+  })
+  const document = createHtmlArtboardDocument({ fusionPatches: [existingPatch] })
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(document, {
+    selector: '[data-node="next"]',
+    sourceText: 'Next'
+  })
+
+  assert.equal(updated.fusionPatches.length, 2)
+  assert.deepEqual(updated.fusionPatches[0], existingPatch)
+  assert.equal(updated.fusionPatches[1].selector, '[data-node="next"]')
+})
+
+test('adding targeted patch recalculates renderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = addFusionPatchPlaceholderToHtmlArtboard(document, {
+    selector: '[data-node="headline"]',
+    sourceText: 'Headline'
+  })
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
 })
 
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {

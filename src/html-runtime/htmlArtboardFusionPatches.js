@@ -16,10 +16,23 @@ function getFusionPatchMutationOptions(options = {}) {
   }
 }
 
+function getFusionPatchOptions(options = {}) {
+  const { mutationOptions: _mutationOptions, recordMutationLog: _recordMutationLog, ...patchOptions } = options
+
+  if (
+    typeof patchOptions.selector === 'string' &&
+    patchOptions.selector &&
+    typeof patchOptions.sourceSelector !== 'string'
+  ) {
+    patchOptions.sourceSelector = patchOptions.selector
+  }
+
+  return patchOptions
+}
+
 export function addFusionPatchPlaceholderToHtmlArtboard(document, options = {}) {
   const runtimeDocument = ensureHtmlArtboardDocument(document)
-  const { mutationOptions: _mutationOptions, recordMutationLog: _recordMutationLog, ...patchOptions } = options
-  const patch = createFusionPatchPlaceholder(patchOptions)
+  const patch = createFusionPatchPlaceholder(getFusionPatchOptions(options))
   let updatedDocument = {
     ...runtimeDocument,
     fusionPatches: [...runtimeDocument.fusionPatches, patch]

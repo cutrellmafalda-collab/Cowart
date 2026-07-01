@@ -428,6 +428,65 @@ body {
   line-height: 1.4;
 }
 
+.cowart-html-patch-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cowart-html-patch-target-empty {
+  margin: 0;
+  color: var(--tl-color-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cowart-html-patch-target-select {
+  display: grid;
+  gap: 6px;
+  color: var(--tl-color-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.cowart-html-patch-target-select select {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+  padding: 0 8px;
+  color: var(--tl-color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-patch-target-meta {
+  display: grid;
+  padding: 7px 8px;
+  gap: 4px;
+  background: var(--tl-color-muted-2);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-patch-target-meta code,
+.cowart-html-patch-target-meta span {
+  overflow: hidden;
+  color: var(--tl-color-text-2);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cowart-html-patch-target-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .cowart-html-fusion-list {
   display: flex;
   flex-direction: column;
