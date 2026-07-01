@@ -56,6 +56,7 @@ import {
   cowartShapeToHtmlArtboard,
   htmlArtboardToCowartShape
 } from './html-runtime/cowartHtmlBridge.js'
+import { updateHtmlArtboardSource } from './html-runtime/htmlArtboardEditing.js'
 import { createHtmlArtboardPreviewSrcDoc } from './html-runtime/htmlArtboardPreview.js'
 import { createHtmlArtboardSourceSnapshot } from './html-runtime/htmlArtboardSource.js'
 
@@ -657,20 +658,22 @@ function CowartStylePanel(props) {
 
 function CowartHtmlArtboardPreviewControls() {
   const editor = useEditor()
-  const runtimeDocument = useValue(
-    'selected html artboard document',
+  const selectedHtmlArtboard = useValue(
+    'selected html artboard',
     () => {
       const selectedShapeIds = editor.getSelectedShapeIds()
       if (selectedShapeIds.length !== 1) return null
 
       const shape = editor.getShape(selectedShapeIds[0])
-      return cowartShapeToHtmlArtboard(shape)
+      const runtimeDocument = cowartShapeToHtmlArtboard(shape)
+      return runtimeDocument ? { runtimeDocument, shape } : null
     },
     [editor]
   )
 
-  if (!runtimeDocument) return null
+  if (!selectedHtmlArtboard) return null
 
+  const { runtimeDocument, shape } = selectedHtmlArtboard
   const srcDoc = createHtmlArtboardPreviewSrcDoc(runtimeDocument)
   const sourceSnapshot = createHtmlArtboardSourceSnapshot(runtimeDocument)
 
@@ -691,6 +694,11 @@ function CowartHtmlArtboardPreviewControls() {
         />
       </section>
       <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
+      <CowartHtmlArtboardEditorControls
+        editor={editor}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+      />
     </div>
   )
 }
@@ -769,6 +777,101 @@ function CowartHtmlSourceSection({ copyLabel, copyStatus, isJson = false, label,
         readOnly
         value={value}
       />
+    </section>
+  )
+}
+
+function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedShape }) {
+  const [draftHtml, setDraftHtml] = useState(runtimeDocument.html)
+  const [draftCss, setDraftCss] = useState(runtimeDocument.css)
+  const [saveStatus, setSaveStatus] = useState('')
+
+  useEffect(() => {
+    setDraftHtml(runtimeDocument.html)
+    setDraftCss(runtimeDocument.css)
+    setSaveStatus('')
+  }, [selectedShape.id])
+
+  const hasUnsavedChanges = draftHtml !== runtimeDocument.html || draftCss !== runtimeDocument.css
+  const statusText = hasUnsavedChanges ? 'Unsaved changes' : saveStatus
+
+  function saveHtmlArtboardSource() {
+    try {
+      const updatedDocument = updateHtmlArtboardSource(runtimeDocument, {
+        html: draftHtml,
+        css: draftCss
+      })
+
+      editor.markHistoryStoppingPoint('update-html-artboard-source')
+      editor.updateShapes([
+        {
+          id: selectedShape.id,
+          type: selectedShape.type,
+          meta: {
+            ...selectedShape.meta,
+            cowartHtmlArtboard: true,
+            runtimeDocument: updatedDocument
+          }
+        }
+      ])
+      setSaveStatus('Saved')
+    } catch {
+      setSaveStatus('Save failed')
+    }
+  }
+
+  function resetHtmlArtboardDraft() {
+    setDraftHtml(runtimeDocument.html)
+    setDraftCss(runtimeDocument.css)
+    setSaveStatus('')
+  }
+
+  return (
+    <section className="cowart-html-artboard-editor" aria-label="HTML Artboard source editor">
+      <div className="cowart-html-preview-heading">
+        <span>Edit Source</span>
+      </div>
+      <label className="cowart-html-editor-section">
+        <span>HTML</span>
+        <textarea
+          className="cowart-html-editor-textarea"
+          value={draftHtml}
+          onChange={(event) => {
+            setDraftHtml(event.target.value)
+            setSaveStatus('')
+          }}
+        />
+      </label>
+      <label className="cowart-html-editor-section">
+        <span>CSS</span>
+        <textarea
+          className="cowart-html-editor-textarea"
+          value={draftCss}
+          onChange={(event) => {
+            setDraftCss(event.target.value)
+            setSaveStatus('')
+          }}
+        />
+      </label>
+      <div className="cowart-html-editor-actions">
+        <button
+          className="cowart-html-editor-save"
+          disabled={!hasUnsavedChanges}
+          onClick={saveHtmlArtboardSource}
+          type="button"
+        >
+          Save Changes
+        </button>
+        <button
+          className="cowart-html-editor-reset"
+          disabled={!hasUnsavedChanges}
+          onClick={resetHtmlArtboardDraft}
+          type="button"
+        >
+          Reset
+        </button>
+        {statusText ? <span className="cowart-html-editor-status">{statusText}</span> : null}
+      </div>
     </section>
   )
 }

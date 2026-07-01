@@ -10,6 +10,7 @@ import {
   htmlArtboardToCowartShape,
   isCowartHtmlArtboardShape
 } from '../src/html-runtime/cowartHtmlBridge.js'
+import { updateHtmlArtboardSource } from '../src/html-runtime/htmlArtboardEditing.js'
 import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
 import { createHtmlArtboardSourceSnapshot } from '../src/html-runtime/htmlArtboardSource.js'
 import {
@@ -319,6 +320,103 @@ test('source snapshot works with partial document through ensureHtmlArtboardDocu
   assert.equal(parsed.html, '<main>Partial source</main>')
   assert.equal(parsed.type, 'cowart-html-artboard')
   assert.equal(parsed.meta.provider, 'mock')
+})
+
+test('updateHtmlArtboardSource updates html', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Before</section>' })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>After</section>' })
+
+  assert.equal(updated.html, '<section>After</section>')
+})
+
+test('updateHtmlArtboardSource updates css', () => {
+  const document = createHtmlArtboardDocument({ css: '.before { color: black; }' })
+  const updated = updateHtmlArtboardSource(document, { css: '.after { color: blue; }' })
+
+  assert.equal(updated.css, '.after { color: blue; }')
+})
+
+test('updateHtmlArtboardSource preserves fusionPatches', () => {
+  const fusionPatches = [{ id: 'patch:preserve', value: 'Original' }]
+  const document = createHtmlArtboardDocument({ fusionPatches })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>Changed</section>' })
+
+  assert.deepEqual(updated.fusionPatches, fusionPatches)
+})
+
+test('updateHtmlArtboardSource preserves assets', () => {
+  const assets = [{ id: 'asset:preserve', type: 'image', src: '/assets/example.png' }]
+  const document = createHtmlArtboardDocument({ assets })
+  const updated = updateHtmlArtboardSource(document, { css: '.changed { color: green; }' })
+
+  assert.deepEqual(updated.assets, assets)
+})
+
+test('updateHtmlArtboardSource preserves mutationLog without appending', () => {
+  const mutationLog = [{ id: 'mutation:existing', type: 'html_update' }]
+  const document = createHtmlArtboardDocument({ mutationLog })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>Changed</section>' })
+
+  assert.deepEqual(updated.mutationLog, mutationLog)
+  assert.equal(updated.mutationLog.length, mutationLog.length)
+})
+
+test('updateHtmlArtboardSource does not mutate input', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Original</section>',
+    css: '.original { color: black; }',
+    fusionPatches: [{ id: 'patch:not-mutated', value: 'Original' }]
+  })
+  const before = JSON.stringify(document)
+
+  updateHtmlArtboardSource(document, {
+    html: '<section>Changed</section>',
+    css: '.changed { color: blue; }'
+  })
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('updateHtmlArtboardSource recalculates renderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = updateHtmlArtboardSource(document, { html: '<section>Fingerprint changed</section>' })
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('updateHtmlArtboardSource works with partial document through ensureHtmlArtboardDocument', () => {
+  const updated = updateHtmlArtboardSource(
+    { html: '<section>Partial before</section>' },
+    { css: '.partial { color: red; }' }
+  )
+
+  assert.equal(updated.type, 'cowart-html-artboard')
+  assert.equal(updated.html, '<section>Partial before</section>')
+  assert.equal(updated.css, '.partial { color: red; }')
+  assert.equal(updated.meta.provider, 'mock')
+})
+
+test('updateHtmlArtboardSource can update only html', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Before</section>',
+    css: '.same { color: black; }'
+  })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>Only HTML</section>' })
+
+  assert.equal(updated.html, '<section>Only HTML</section>')
+  assert.equal(updated.css, '.same { color: black; }')
+})
+
+test('updateHtmlArtboardSource can update only css', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Same</section>',
+    css: '.before { color: black; }'
+  })
+  const updated = updateHtmlArtboardSource(document, { css: '.only-css { color: purple; }' })
+
+  assert.equal(updated.html, '<section>Same</section>')
+  assert.equal(updated.css, '.only-css { color: purple; }')
 })
 
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {
