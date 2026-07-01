@@ -11,6 +11,11 @@ import {
   isCowartHtmlArtboardShape
 } from '../src/html-runtime/cowartHtmlBridge.js'
 import { updateHtmlArtboardSource } from '../src/html-runtime/htmlArtboardEditing.js'
+import {
+  appendHtmlArtboardMutations,
+  createHtmlArtboardMutation,
+  createSourceUpdateMutations
+} from '../src/html-runtime/htmlArtboardMutations.js'
 import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
 import { createHtmlArtboardSourceSnapshot } from '../src/html-runtime/htmlArtboardSource.js'
 import {
@@ -322,6 +327,62 @@ test('source snapshot works with partial document through ensureHtmlArtboardDocu
   assert.equal(parsed.meta.provider, 'mock')
 })
 
+test('createHtmlArtboardMutation returns required fields', () => {
+  const mutation = createHtmlArtboardMutation('document_meta_update', { label: 'Updated' })
+
+  assert.equal(typeof mutation.id, 'string')
+  assert.equal(mutation.type, 'document_meta_update')
+  assert.equal(typeof mutation.timestamp, 'string')
+  assert.equal(mutation.target, 'runtimeDocument')
+  assert.deepEqual(mutation.payload, { label: 'Updated' })
+  assert.equal(mutation.meta.source, 'html-artboard-editor')
+})
+
+test('createSourceUpdateMutations creates html_update when html changes', () => {
+  const before = createHtmlArtboardDocument({ html: '<section>Before</section>' })
+  const after = { ...before, html: '<section>After</section>' }
+  const mutations = createSourceUpdateMutations(before, after)
+
+  assert.equal(mutations.length, 1)
+  assert.equal(mutations[0].type, 'html_update')
+  assert.equal(mutations[0].payload.previousHtml, '<section>Before</section>')
+  assert.equal(mutations[0].payload.nextHtml, '<section>After</section>')
+})
+
+test('createSourceUpdateMutations creates css_update when css changes', () => {
+  const before = createHtmlArtboardDocument({ css: '.before { color: black; }' })
+  const after = { ...before, css: '.after { color: blue; }' }
+  const mutations = createSourceUpdateMutations(before, after)
+
+  assert.equal(mutations.length, 1)
+  assert.equal(mutations[0].type, 'css_update')
+  assert.equal(mutations[0].payload.previousCss, '.before { color: black; }')
+  assert.equal(mutations[0].payload.nextCss, '.after { color: blue; }')
+})
+
+test('createSourceUpdateMutations returns empty array when nothing changes', () => {
+  const document = createHtmlArtboardDocument()
+  const mutations = createSourceUpdateMutations(document, document)
+
+  assert.deepEqual(mutations, [])
+})
+
+test('appendHtmlArtboardMutations appends without mutating input', () => {
+  const document = createHtmlArtboardDocument({
+    mutationLog: [createHtmlArtboardMutation('document_meta_update', { value: 'existing' })]
+  })
+  const before = JSON.stringify(document)
+  const mutation = createHtmlArtboardMutation('html_update', {
+    previousHtml: '<section>Before</section>',
+    nextHtml: '<section>After</section>'
+  })
+  const updated = appendHtmlArtboardMutations(document, [mutation])
+
+  assert.equal(updated.mutationLog.length, 2)
+  assert.equal(updated.mutationLog[1].type, 'html_update')
+  assert.equal(JSON.stringify(document), before)
+})
+
 test('updateHtmlArtboardSource updates html', () => {
   const document = createHtmlArtboardDocument({ html: '<section>Before</section>' })
   const updated = updateHtmlArtboardSource(document, { html: '<section>After</section>' })
@@ -352,10 +413,14 @@ test('updateHtmlArtboardSource preserves assets', () => {
   assert.deepEqual(updated.assets, assets)
 })
 
-test('updateHtmlArtboardSource preserves mutationLog without appending', () => {
+test('updateHtmlArtboardSource with recordMutationLog false does not append', () => {
   const mutationLog = [{ id: 'mutation:existing', type: 'html_update' }]
   const document = createHtmlArtboardDocument({ mutationLog })
-  const updated = updateHtmlArtboardSource(document, { html: '<section>Changed</section>' })
+  const updated = updateHtmlArtboardSource(
+    document,
+    { html: '<section>Changed</section>' },
+    { recordMutationLog: false }
+  )
 
   assert.deepEqual(updated.mutationLog, mutationLog)
   assert.equal(updated.mutationLog.length, mutationLog.length)
@@ -417,6 +482,95 @@ test('updateHtmlArtboardSource can update only css', () => {
 
   assert.equal(updated.html, '<section>Same</section>')
   assert.equal(updated.css, '.only-css { color: purple; }')
+})
+
+test('updateHtmlArtboardSource appends html_update mutation when html changes', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Before</section>' })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>After</section>' })
+
+  assert.equal(updated.mutationLog.length, 1)
+  assert.equal(updated.mutationLog[0].type, 'html_update')
+})
+
+test('updateHtmlArtboardSource appends css_update mutation when css changes', () => {
+  const document = createHtmlArtboardDocument({ css: '.before { color: black; }' })
+  const updated = updateHtmlArtboardSource(document, { css: '.after { color: blue; }' })
+
+  assert.equal(updated.mutationLog.length, 1)
+  assert.equal(updated.mutationLog[0].type, 'css_update')
+})
+
+test('updateHtmlArtboardSource appends two mutations when html and css both change', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Before</section>',
+    css: '.before { color: black; }'
+  })
+  const updated = updateHtmlArtboardSource(document, {
+    html: '<section>After</section>',
+    css: '.after { color: blue; }'
+  })
+
+  assert.equal(updated.mutationLog.length, 2)
+  assert.deepEqual(
+    updated.mutationLog.map((mutation) => mutation.type),
+    ['html_update', 'css_update']
+  )
+})
+
+test('updateHtmlArtboardSource does not append mutation when value unchanged', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Same</section>',
+    css: '.same { color: black; }'
+  })
+  const updated = updateHtmlArtboardSource(document, {
+    html: '<section>Same</section>',
+    css: '.same { color: black; }'
+  })
+
+  assert.deepEqual(updated.mutationLog, [])
+})
+
+test('updateHtmlArtboardSource preserves existing mutationLog', () => {
+  const existingMutation = createHtmlArtboardMutation('document_meta_update', { value: 'existing' })
+  const document = createHtmlArtboardDocument({
+    html: '<section>Before</section>',
+    mutationLog: [existingMutation]
+  })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>After</section>' })
+
+  assert.equal(updated.mutationLog.length, 2)
+  assert.deepEqual(updated.mutationLog[0], existingMutation)
+  assert.equal(updated.mutationLog[1].type, 'html_update')
+})
+
+test('updateHtmlArtboardSource recalculates renderFingerprint after mutations', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = updateHtmlArtboardSource(document, { css: '.changed { color: blue; }' })
+
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('mutation payload includes previous and next values', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Before</section>',
+    css: '.before { color: black; }'
+  })
+  const updated = updateHtmlArtboardSource(document, {
+    html: '<section>After</section>',
+    css: '.after { color: blue; }'
+  })
+
+  assert.equal(updated.mutationLog[0].payload.previousHtml, '<section>Before</section>')
+  assert.equal(updated.mutationLog[0].payload.nextHtml, '<section>After</section>')
+  assert.equal(updated.mutationLog[1].payload.previousCss, '.before { color: black; }')
+  assert.equal(updated.mutationLog[1].payload.nextCss, '.after { color: blue; }')
+})
+
+test('mutation meta.source is html-artboard-editor', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Before</section>' })
+  const updated = updateHtmlArtboardSource(document, { html: '<section>After</section>' })
+
+  assert.equal(updated.mutationLog[0].meta.source, 'html-artboard-editor')
 })
 
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {

@@ -699,6 +699,7 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
+      <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
     </div>
   )
 }
@@ -872,6 +873,35 @@ function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedSha
         </button>
         {statusText ? <span className="cowart-html-editor-status">{statusText}</span> : null}
       </div>
+    </section>
+  )
+}
+
+function CowartHtmlArtboardMutationLog({ runtimeDocument }) {
+  const mutationLog = Array.isArray(runtimeDocument.mutationLog) ? runtimeDocument.mutationLog : []
+  const recentMutations = mutationLog.slice(-3).reverse()
+
+  return (
+    <section className="cowart-html-mutation-log" aria-label="HTML Artboard mutation log">
+      <div className="cowart-html-preview-heading">
+        <span>Mutation Log</span>
+        <span>Total: {mutationLog.length}</span>
+      </div>
+      {recentMutations.length === 0 ? (
+        <p className="cowart-html-mutation-empty">No mutations yet.</p>
+      ) : (
+        <ol className="cowart-html-mutation-list">
+          {recentMutations.map((mutation, index) => (
+            <li
+              key={mutation.id ?? `${mutation.type}:${mutation.timestamp}:${index}`}
+              className="cowart-html-mutation-item"
+            >
+              <span>{mutation.type}</span>
+              <time>{mutation.timestamp}</time>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   )
 }
