@@ -11,6 +11,7 @@ import {
   isCowartHtmlArtboardShape
 } from '../src/html-runtime/cowartHtmlBridge.js'
 import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
+import { createHtmlArtboardSourceSnapshot } from '../src/html-runtime/htmlArtboardSource.js'
 import {
   createRenderFingerprint,
   validateRenderFingerprint,
@@ -247,6 +248,77 @@ test('preview helper works with partial document', () => {
   assert.equal(srcDoc.includes('<main>Partial</main>'), true)
   assert.equal(srcDoc.includes('Cowart HTML Artboard'), false)
   assert.equal(srcDoc.includes('<style>'), true)
+})
+
+test('createHtmlArtboardSourceSnapshot returns html/css/json', () => {
+  const snapshot = createHtmlArtboardSourceSnapshot(createHtmlArtboardDocument())
+
+  assert.equal(typeof snapshot.html, 'string')
+  assert.equal(typeof snapshot.css, 'string')
+  assert.equal(typeof snapshot.json, 'string')
+})
+
+test('source snapshot preserves document html', () => {
+  const snapshot = createHtmlArtboardSourceSnapshot({
+    html: '<section><h1>Source HTML</h1></section>'
+  })
+
+  assert.equal(snapshot.html, '<section><h1>Source HTML</h1></section>')
+})
+
+test('source snapshot preserves document css', () => {
+  const snapshot = createHtmlArtboardSourceSnapshot({
+    css: '.source { color: rebeccapurple; }'
+  })
+
+  assert.equal(snapshot.css, '.source { color: rebeccapurple; }')
+})
+
+test('source snapshot json is valid JSON', () => {
+  const snapshot = createHtmlArtboardSourceSnapshot(createHtmlArtboardDocument())
+
+  assert.doesNotThrow(() => JSON.parse(snapshot.json))
+})
+
+test('parsed source snapshot json contains type cowart-html-artboard', () => {
+  const snapshot = createHtmlArtboardSourceSnapshot(createHtmlArtboardDocument())
+  const parsed = JSON.parse(snapshot.json)
+
+  assert.equal(parsed.type, 'cowart-html-artboard')
+})
+
+test('parsed source snapshot json contains fusionPatches', () => {
+  const fusionPatches = [{ id: 'patch:source', value: 'Source patch' }]
+  const snapshot = createHtmlArtboardSourceSnapshot({ fusionPatches })
+  const parsed = JSON.parse(snapshot.json)
+
+  assert.deepEqual(parsed.fusionPatches, fusionPatches)
+})
+
+test('source snapshot helper does not mutate input', () => {
+  const document = {
+    id: 'html-artboard:source-mutation',
+    html: '<section>Stable source</section>',
+    css: '.stable-source { color: black; }',
+    fusionPatches: [{ id: 'patch:source-stable', value: 'Original' }]
+  }
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardSourceSnapshot(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('source snapshot works with partial document through ensureHtmlArtboardDocument', () => {
+  const snapshot = createHtmlArtboardSourceSnapshot({
+    html: '<main>Partial source</main>'
+  })
+  const parsed = JSON.parse(snapshot.json)
+
+  assert.equal(snapshot.html, '<main>Partial source</main>')
+  assert.equal(parsed.html, '<main>Partial source</main>')
+  assert.equal(parsed.type, 'cowart-html-artboard')
+  assert.equal(parsed.meta.provider, 'mock')
 })
 
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {

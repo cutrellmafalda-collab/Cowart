@@ -57,6 +57,7 @@ import {
   htmlArtboardToCowartShape
 } from './html-runtime/cowartHtmlBridge.js'
 import { createHtmlArtboardPreviewSrcDoc } from './html-runtime/htmlArtboardPreview.js'
+import { createHtmlArtboardSourceSnapshot } from './html-runtime/htmlArtboardSource.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -671,6 +672,7 @@ function CowartHtmlArtboardPreviewControls() {
   if (!runtimeDocument) return null
 
   const srcDoc = createHtmlArtboardPreviewSrcDoc(runtimeDocument)
+  const sourceSnapshot = createHtmlArtboardSourceSnapshot(runtimeDocument)
 
   return (
     <div className="cowart-html-artboard-preview-panel" aria-label="HTML Artboard preview">
@@ -688,7 +690,86 @@ function CowartHtmlArtboardPreviewControls() {
           title="HTML Artboard preview"
         />
       </section>
+      <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
     </div>
+  )
+}
+
+function CowartHtmlArtboardSourceControls({ sourceSnapshot }) {
+  const [copyStatus, setCopyStatus] = useState({})
+
+  useEffect(() => {
+    setCopyStatus({})
+  }, [sourceSnapshot.html, sourceSnapshot.css, sourceSnapshot.json])
+
+  async function copySource(kind, value) {
+    if (!navigator.clipboard?.writeText) {
+      setCopyStatus((status) => ({ ...status, [kind]: 'Copy failed' }))
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopyStatus((status) => ({ ...status, [kind]: 'Copied' }))
+    } catch {
+      setCopyStatus((status) => ({ ...status, [kind]: 'Copy failed' }))
+    }
+  }
+
+  return (
+    <section className="cowart-html-artboard-source" aria-label="HTML Artboard source">
+      <div className="cowart-html-preview-heading">
+        <span>Source</span>
+      </div>
+      <CowartHtmlSourceSection
+        copyLabel="Copy HTML"
+        copyStatus={copyStatus.html}
+        label="HTML"
+        onCopy={() => copySource('html', sourceSnapshot.html)}
+        value={sourceSnapshot.html}
+      />
+      <CowartHtmlSourceSection
+        copyLabel="Copy CSS"
+        copyStatus={copyStatus.css}
+        label="CSS"
+        onCopy={() => copySource('css', sourceSnapshot.css)}
+        value={sourceSnapshot.css}
+      />
+      <CowartHtmlSourceSection
+        copyLabel="Copy JSON"
+        copyStatus={copyStatus.json}
+        isJson
+        label="Runtime JSON"
+        onCopy={() => copySource('json', sourceSnapshot.json)}
+        value={sourceSnapshot.json}
+      />
+    </section>
+  )
+}
+
+function CowartHtmlSourceSection({ copyLabel, copyStatus, isJson = false, label, onCopy, value }) {
+  return (
+    <section className="cowart-html-source-section">
+      <div className="cowart-html-source-header">
+        <span>{label}</span>
+        <div>
+          {copyStatus ? <span className="cowart-html-source-status">{copyStatus}</span> : null}
+          <button className="cowart-html-source-copy" onClick={onCopy} type="button">
+            {copyLabel}
+          </button>
+        </div>
+      </div>
+      <textarea
+        aria-label={`${label} source`}
+        className={
+          isJson
+            ? 'cowart-html-source-textarea cowart-html-source-textarea__json'
+            : 'cowart-html-source-textarea'
+        }
+        readOnly
+        value={value}
+      />
+    </section>
   )
 }
 
