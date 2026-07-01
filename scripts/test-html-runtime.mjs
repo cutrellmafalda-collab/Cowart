@@ -21,6 +21,12 @@ import {
   createHtmlArtboardMutation,
   createSourceUpdateMutations
 } from '../src/html-runtime/htmlArtboardMutations.js'
+import {
+  applyHtmlArtboardMutation,
+  createReplayBaseDocument,
+  replayHtmlArtboardMutationLog,
+  replayHtmlArtboardMutations
+} from '../src/html-runtime/htmlArtboardReplay.js'
 import { createHtmlArtboardPreviewSrcDoc } from '../src/html-runtime/htmlArtboardPreview.js'
 import {
   createHtmlArtboardExportBundle,
@@ -1100,6 +1106,295 @@ test('adding targeted patch recalculates renderFingerprint', () => {
 
   assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
   assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('applyHtmlArtboardMutation applies html_update', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Before</section>' })
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'html_update',
+    payload: { nextHtml: '<section>After</section>' }
+  })
+
+  assert.equal(updated.html, '<section>After</section>')
+  assert.deepEqual(updated.mutationLog, [])
+})
+
+test('applyHtmlArtboardMutation applies css_update', () => {
+  const document = createHtmlArtboardDocument({ css: '.before { color: black; }' })
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'css_update',
+    payload: { nextCss: '.after { color: blue; }' }
+  })
+
+  assert.equal(updated.css, '.after { color: blue; }')
+})
+
+test('applyHtmlArtboardMutation ignores unknown mutation by default', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Stable</section>' })
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'unknown_mutation',
+    payload: { nextHtml: '<section>Ignored</section>' }
+  })
+
+  assert.equal(updated.html, '<section>Stable</section>')
+})
+
+test('applyHtmlArtboardMutation throws unknown mutation in strict mode', () => {
+  assert.throws(() =>
+    applyHtmlArtboardMutation(
+      createHtmlArtboardDocument(),
+      { type: 'unknown_mutation', payload: {} },
+      { strict: true }
+    )
+  )
+})
+
+test('applyHtmlArtboardMutation does not mutate input document', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Original</section>',
+    fusionPatches: [{ id: 'patch:original', prompt: 'Original' }]
+  })
+  const before = JSON.stringify(document)
+
+  applyHtmlArtboardMutation(document, {
+    type: 'html_update',
+    payload: { nextHtml: '<section>Changed</section>' }
+  })
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('applyHtmlArtboardMutation recalculates renderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'html_update',
+    payload: { nextHtml: '<section>Replay fingerprint</section>' }
+  })
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('applyHtmlArtboardMutation applies fusion_patch_create', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:replay-add' })
+  const updated = applyHtmlArtboardMutation(createHtmlArtboardDocument(), {
+    type: 'fusion_patch_create',
+    payload: { patch }
+  })
+
+  assert.equal(updated.fusionPatches.length, 1)
+  assert.equal(updated.fusionPatches[0].id, 'patch:replay-add')
+})
+
+test('fusion_patch_create replay normalizes patch', () => {
+  const updated = applyHtmlArtboardMutation(createHtmlArtboardDocument(), {
+    type: 'fusion_patch_create',
+    payload: {
+      patch: {
+        id: 'patch:legacy-replay',
+        type: 'ai-fusion-placeholder',
+        selector: '[data-node="headline"]',
+        prompt: 'Legacy replay'
+      }
+    }
+  })
+
+  assert.equal(updated.fusionPatches[0].type, 'fusion-patch')
+  assert.equal(updated.fusionPatches[0].selector, '[data-node="headline"]')
+  assert.equal(updated.fusionPatches[0].prompt, 'Legacy replay')
+})
+
+test('fusion_patch_create does not duplicate same patch id on repeated replay', () => {
+  const mutation = {
+    type: 'fusion_patch_create',
+    payload: { patch: { id: 'patch:dedupe', prompt: 'Dedupe' } }
+  }
+  const once = applyHtmlArtboardMutation(createHtmlArtboardDocument(), mutation)
+  const twice = applyHtmlArtboardMutation(once, mutation)
+
+  assert.equal(twice.fusionPatches.length, 1)
+  assert.equal(twice.fusionPatches[0].id, 'patch:dedupe')
+})
+
+test('fusion_patch_create preserves existing fusionPatches', () => {
+  const existingPatch = createFusionPatchPlaceholder({ id: 'patch:existing-replay' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [existingPatch] })
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'fusion_patch_create',
+    payload: { patch: { id: 'patch:new-replay' } }
+  })
+
+  assert.equal(updated.fusionPatches.length, 2)
+  assert.equal(updated.fusionPatches[0].id, 'patch:existing-replay')
+  assert.equal(updated.fusionPatches[1].id, 'patch:new-replay')
+})
+
+test('applyHtmlArtboardMutation applies document_meta_update', () => {
+  const document = createHtmlArtboardDocument({ meta: { provider: 'mock' } })
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'document_meta_update',
+    payload: { meta: { title: 'Replay title' } }
+  })
+
+  assert.equal(updated.meta.title, 'Replay title')
+})
+
+test('document_meta_update preserves existing meta fields', () => {
+  const document = createHtmlArtboardDocument({ meta: { provider: 'mock', title: 'Original' } })
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'document_meta_update',
+    payload: { meta: { exportName: 'Replay export' } }
+  })
+
+  assert.equal(updated.meta.provider, 'mock')
+  assert.equal(updated.meta.title, 'Original')
+  assert.equal(updated.meta.exportName, 'Replay export')
+})
+
+test('replayHtmlArtboardMutations applies mutations in order', () => {
+  const base = createHtmlArtboardDocument({ html: '<section>Base</section>', css: '.base {}' })
+  const replayed = replayHtmlArtboardMutations(base, [
+    { type: 'html_update', payload: { nextHtml: '<section>First</section>' } },
+    { type: 'html_update', payload: { nextHtml: '<section>Second</section>' } },
+    { type: 'css_update', payload: { nextCss: '.second { color: green; }' } }
+  ])
+
+  assert.equal(replayed.html, '<section>Second</section>')
+  assert.equal(replayed.css, '.second { color: green; }')
+})
+
+test('replayHtmlArtboardMutations handles non-array mutations', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Base</section>' })
+  const replayed = replayHtmlArtboardMutations(document, null)
+
+  assert.equal(replayed.html, '<section>Base</section>')
+  assert.deepEqual(replayed.mutationLog, [])
+})
+
+test('replayHtmlArtboardMutations does not mutate input mutations', () => {
+  const mutations = [
+    {
+      type: 'fusion_patch_create',
+      payload: { patch: { id: 'patch:mutation-input', prompt: 'Original' } }
+    }
+  ]
+  const before = JSON.stringify(mutations)
+
+  replayHtmlArtboardMutations(createHtmlArtboardDocument(), mutations)
+
+  assert.equal(JSON.stringify(mutations), before)
+})
+
+test('replayHtmlArtboardMutations can include mutationLog in output', () => {
+  const mutations = [{ type: 'html_update', payload: { nextHtml: '<section>Logged</section>' } }]
+  const replayed = replayHtmlArtboardMutations(createHtmlArtboardDocument(), mutations)
+
+  assert.deepEqual(replayed.mutationLog, mutations)
+  assert.notEqual(replayed.mutationLog, mutations)
+})
+
+test('replayHtmlArtboardMutations can omit mutationLog if options.includeMutationLog is false', () => {
+  const replayed = replayHtmlArtboardMutations(
+    createHtmlArtboardDocument(),
+    [{ type: 'html_update', payload: { nextHtml: '<section>No log</section>' } }],
+    { includeMutationLog: false }
+  )
+
+  assert.deepEqual(replayed.mutationLog, [])
+})
+
+test('createReplayBaseDocument returns normalized base', () => {
+  const base = createReplayBaseDocument({ id: 'html-artboard:replay-base' })
+
+  assert.equal(base.id, 'html-artboard:replay-base')
+  assert.equal(base.type, 'cowart-html-artboard')
+  assert.deepEqual(base.mutationLog, [])
+  assert.equal(base.renderFingerprint, createRenderFingerprint(base))
+})
+
+test('createReplayBaseDocument uses options.initialHtml', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Current</section>' })
+  const base = createReplayBaseDocument(document, { initialHtml: '<section>Initial</section>' })
+
+  assert.equal(base.html, '<section>Initial</section>')
+})
+
+test('createReplayBaseDocument uses options.initialCss', () => {
+  const document = createHtmlArtboardDocument({ css: '.current { color: red; }' })
+  const base = createReplayBaseDocument(document, { initialCss: '.initial { color: blue; }' })
+
+  assert.equal(base.css, '.initial { color: blue; }')
+})
+
+test('createReplayBaseDocument uses options.initialFusionPatches', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [{ id: 'patch:current' }]
+  })
+  const base = createReplayBaseDocument(document, {
+    initialFusionPatches: [{ id: 'patch:initial', prompt: 'Initial' }]
+  })
+
+  assert.equal(base.fusionPatches.length, 1)
+  assert.equal(base.fusionPatches[0].id, 'patch:initial')
+  assert.equal(base.fusionPatches[0].type, 'fusion-patch')
+})
+
+test('replayHtmlArtboardMutationLog returns a document', () => {
+  const replayed = replayHtmlArtboardMutationLog(
+    createHtmlArtboardDocument({
+      meta: { initialHtml: '<section>Initial</section>' },
+      mutationLog: [{ type: 'html_update', payload: { nextHtml: '<section>Replay</section>' } }]
+    })
+  )
+
+  assert.equal(replayed.type, 'cowart-html-artboard')
+  assert.equal(replayed.html, '<section>Replay</section>')
+})
+
+test('replayHtmlArtboardMutationLog uses document.mutationLog', () => {
+  const document = createHtmlArtboardDocument({
+    meta: { initialHtml: '<section>Initial</section>' },
+    html: '<section>Current</section>',
+    mutationLog: [{ type: 'html_update', payload: { nextHtml: '<section>From log</section>' } }]
+  })
+  const replayed = replayHtmlArtboardMutationLog(document)
+
+  assert.equal(replayed.html, '<section>From log</section>')
+  assert.equal(replayed.mutationLog.length, 1)
+})
+
+test('replayHtmlArtboardMutationLog works with html_update/css_update/fusion_patch_create', () => {
+  const replayed = replayHtmlArtboardMutationLog(
+    createHtmlArtboardDocument({
+      meta: {
+        initialHtml: '<section>Initial</section>',
+        initialCss: '.initial { color: black; }',
+        initialFusionPatches: []
+      },
+      mutationLog: [
+        { type: 'html_update', payload: { nextHtml: '<section>Replay HTML</section>' } },
+        { type: 'css_update', payload: { nextCss: '.replay { color: purple; }' } },
+        { type: 'fusion_patch_create', payload: { patch: { id: 'patch:replayed' } } }
+      ]
+    })
+  )
+
+  assert.equal(replayed.html, '<section>Replay HTML</section>')
+  assert.equal(replayed.css, '.replay { color: purple; }')
+  assert.equal(replayed.fusionPatches.length, 1)
+  assert.equal(replayed.fusionPatches[0].id, 'patch:replayed')
+})
+
+test('replayHtmlArtboardMutationLog does not mutate input document', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Current</section>',
+    mutationLog: [{ type: 'html_update', payload: { nextHtml: '<section>Replay</section>' } }]
+  })
+  const before = JSON.stringify(document)
+
+  replayHtmlArtboardMutationLog(document)
+
+  assert.equal(JSON.stringify(document), before)
 })
 
 test('isCowartHtmlArtboardShape returns true for meta.cowartHtmlArtboard', () => {
