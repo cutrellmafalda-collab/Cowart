@@ -13,9 +13,7 @@
     "test:mcp-html-artboard-apply": "node scripts/test-mcp-html-artboard-apply.mjs",
     "test:mcp-html-artboard-fusion-patch-apply": "node scripts/test-mcp-html-artboard-fusion-patch-apply.mjs",
     "test:mcp-html-artboard-mock-fusion-patch-asset": "node scripts/test-mcp-html-artboard-mock-fusion-patch-asset.mjs",
-    "test:html-runtime-openai-provider": "node scripts/test-html-runtime-openai-provider.mjs",
-    "test:mcp-html-artboard-ai-generation-proposal": "node scripts/test-mcp-html-artboard-ai-generation-proposal.mjs",
-    "test:mcp-html-artboard-ai-generation-apply": "node scripts/test-mcp-html-artboard-ai-generation-apply.mjs",
+    "test:mcp-html-artboard-fusion-patch-generation-request": "node scripts/test-mcp-html-artboard-fusion-patch-generation-request.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -234,44 +234,45 @@ The first real AI UI should be conservative:
 
 ## 11. MCP Strategy
 
-Real AI MCP tools should not start with broad write permission.
+Real image generation MCP tools should not call providers directly from Cowart.
 
 Recommended tool sequence:
 
-1. `propose_cowart_html_artboard_ai_fusion_patch`
-   - dry-run
-   - does not call provider
-   - returns provider payload preview
+1. `get_cowart_html_artboard_fusion_patch_generation_request`
+   - read-only
+   - does not call a provider
+   - returns a standard task package for Codex, ChatGPT, or an image generation skill
 
 2. `generate_cowart_html_artboard_mock_fusion_patch_asset`
    - already exists
    - remains the safe local baseline
 
-3. `generate_cowart_html_artboard_ai_fusion_patch_asset`
-   - requires `confirmGenerate=true`
+3. external image generation by Codex, ChatGPT, or a skill
+   - happens outside Cowart
+   - may produce a local image file or data URL
+   - Cowart does not store provider keys or call provider APIs
+
+4. `attach_cowart_html_artboard_fusion_patch_image`
+   - requires `confirmApply=true`
    - requires expected safety guards
-   - includes cost warning
-   - includes timeout
-   - requires explicit provider
+   - attaches an already-generated image to a FusionPatch
+   - records mutationLog
 
-4. `apply_cowart_html_artboard_ai_fusion_patch_asset`
-   - useful if generation and application are separated
-   - must require explicit confirmation
-
-All writes need safety guards. All provider calls need explicit confirmation. Stale fingerprints must refuse writes.
+All writes need safety guards. Stale fingerprints must refuse writes. Cowart should remain provider-agnostic.
 
 ## 12. Minimum Real AI Spike
 
-The smallest real AI spike should only:
+The smallest external image-generation spike should only:
 
 - select one existing FusionPatch
 - use `patch.prompt`
 - use `patch.region`
 - use canvas thumbnail or standalone HTML preview as reference
-- call a provider to generate one PNG/WebP patch asset
+- ask Codex, ChatGPT, or a skill to generate one PNG/WebP patch asset outside Cowart
+- attach the resulting image with MCP
 - write `patchAssetUrl`
 - set `patch.status = "generated"`
-- record `fusion_patch_ai_asset_generate` in mutationLog
+- record `fusion_patch_external_asset_attach` in mutationLog
 - let the preview thumbnail show generated patch indication
 
 The first spike should not do:
@@ -295,9 +296,9 @@ Current mock provider:
 - local only
 - instant
 
-Real provider:
+External image generation:
 
-- networked
+- may be networked
 - paid or rate-limited
 - higher latency
 - can fail
@@ -307,14 +308,13 @@ Real provider:
 
 Migration steps:
 
-1. Define provider interface.
-2. Validate provider payloads.
-3. Add dry-run provider request preview.
-4. Keep mock provider as default.
-5. Hide real provider behind an explicit flag.
-6. First real generation writes only `patchAssetUrl`.
-7. Do not auto-apply broader source edits.
-8. Require full browser and MCP smoke tests.
+1. Define generation request package.
+2. Keep mock provider as local baseline.
+3. Let external Codex, ChatGPT, or skill generate images.
+4. Attach local image files through MCP with safety guards.
+5. First external result writes only `patchAssetUrl` and metadata.
+6. Do not auto-apply broader source edits.
+7. Require full browser and MCP smoke tests.
 
 ## 14. Risks
 
@@ -345,20 +345,18 @@ Phase 28 introduces a provider interface layer for HTML Artboard FusionPatch gen
 
 This phase is a preparation step only. It makes the future provider boundary clearer without changing Cowart's current safety posture.
 
-## 16. Phase 29 OpenAI Provider Adapter
+## 16. Codex / Skill Image Generation Bridge
 
-Phase 29 adds an OpenAI image provider adapter, but real calls remain disabled by default.
+The OpenAI provider adapter direction has been superseded by the Codex / Skill Image Generation Bridge.
 
-- The adapter builds a minimal Image API payload for `https://api.openai.com/v1/images/generations`.
-- The adapter uses `fetch` instead of adding an SDK dependency.
-- The adapter reads an API key only from explicit provider options or runtime environment at call time.
-- Missing API keys return `ok: false` with `missing_api_key`; they do not throw and do not call the network.
-- Tests use fake transport only and do not call OpenAI.
-- The first adapter is text-to-image patch asset generation, not image edit or mask generation.
-- Provider payloads do not include API keys, local paths, `.codex/config.toml`, or Cowart canvas store data.
-- The adapter still cannot overwrite HTML/CSS; it can only produce a patch asset result for later guarded application.
+- Cowart creates image generation request packages.
+- Codex, ChatGPT, or a skill performs image generation outside Cowart.
+- Cowart receives a local image file or data URL and attaches it to a FusionPatch.
+- Cowart does not store API keys.
+- Cowart does not call OpenAI, Gemini, or image provider APIs directly.
+- Cowart remains responsible for safety guards, mutationLog, asset attachment, and preview freshness.
 
-Future image edit, mask upload, and preview-reference workflows require separate phases.
+This keeps provider credentials and provider execution outside the Cowart runtime.
 
 ## 17. Recommendation
 
@@ -366,29 +364,28 @@ Do not connect real AI yet.
 
 Before real AI, do:
 
-1. provider interface abstraction
-2. AI provider dry-run payload preview
+1. generation request package
+2. external image attach tool
 3. asset size limit / storage strategy
 4. region strategy spike
-5. failure-state UI
-6. cost / timeout / cancellation policy
-7. keep mock provider as default
+5. failure-state UI for external attach
+6. keep mock provider as local baseline
 
 Recommended Phase 28:
 
-**AI Provider Interface + Mock Provider Adapter**
+**Image Generation Request Package**
 
 Goal:
 
-- define provider interface
-- continue using only mock provider
+- return prompt, target, region, preview, output, and safety guards
 - do not call real APIs
-- make future real providers pluggable
+- let Codex, ChatGPT, or skills generate images externally
+- keep Cowart provider-agnostic
 
 ## 18. Final Decision
 
-- Cowart can now enter AI provider interface design.
-- Cowart should not directly call real AI yet.
-- Real AI provider integration must come after provider interface, asset strategy, safety strategy, and failure handling.
+- Cowart should not directly call real AI providers.
+- Image generation should happen through Codex, ChatGPT, or skills outside Cowart.
+- Cowart should accept generated assets through guarded MCP attach tools.
+- Real provider credentials must stay outside Cowart.
 - Mock provider remains the default.
-- Real provider must be explicit opt-in.
