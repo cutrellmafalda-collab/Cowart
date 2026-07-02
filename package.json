@@ -12,6 +12,7 @@
     "test:mcp-html-artboard-fusion-patch-proposal": "node scripts/test-mcp-html-artboard-fusion-patch-proposal.mjs",
     "test:mcp-html-artboard-apply": "node scripts/test-mcp-html-artboard-apply.mjs",
     "test:mcp-html-artboard-fusion-patch-apply": "node scripts/test-mcp-html-artboard-fusion-patch-apply.mjs",
+    "test:mcp-html-artboard-mock-fusion-patch-asset": "node scripts/test-mcp-html-artboard-mock-fusion-patch-asset.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -25,6 +25,11 @@ import {
   createHtmlArtboardFusionPatchApplyPlan,
   summarizeHtmlArtboardFusionPatchApplyResult,
 } from "./htmlArtboardFusionPatchApply.mjs";
+import {
+  applyHtmlArtboardMockFusionPatchAssetDocumentToShapeRecord,
+  createHtmlArtboardMockFusionPatchAssetPlan,
+  summarizeHtmlArtboardMockFusionPatchAssetResult,
+} from "./htmlArtboardMockFusionPatchAssetGeneration.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
@@ -34,6 +39,8 @@ const TOOL_PROPOSE_HTML_ARTBOARD_EDIT = "propose_cowart_html_artboard_edit";
 const TOOL_PROPOSE_HTML_ARTBOARD_FUSION_PATCH = "propose_cowart_html_artboard_fusion_patch";
 const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_APPLY_HTML_ARTBOARD_FUSION_PATCH = "apply_cowart_html_artboard_fusion_patch";
+const TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET =
+  "generate_cowart_html_artboard_mock_fusion_patch_asset";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -895,6 +902,67 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET,
+      title: "Generate Cowart HTML Artboard Mock FusionPatch Asset",
+      description:
+        "Generate deterministic mock SVG FusionPatch asset data for the currently selected Cowart HTML Artboard. Defaults to dry-run and requires confirmApply=true to save. Optional expected* fields act as optimistic safety guards.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          cowartUrl: {
+            type: "string",
+            description: "Running Cowart URL, for example http://127.0.0.1:43217.",
+          },
+          patchId: {
+            type: "string",
+            description: "Optional FusionPatch id. If omitted, visible patches receive mock assets.",
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to false.",
+          },
+          confirmApply: {
+            type: "boolean",
+            description: "Must be true to write generated mock asset fields back to the selected HTML Artboard.",
+          },
+          expectedDocumentId: {
+            type: "string",
+            description: "Optional optimistic guard. If provided, it must match the current runtimeDocument id.",
+          },
+          expectedRenderFingerprint: {
+            type: "string",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument renderFingerprint.",
+          },
+          expectedMutationCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument mutationLog length.",
+          },
+          expectedFusionPatchCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument fusionPatches length.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -1277,6 +1345,131 @@ async function handleToolCall(id, params) {
       results.length === 0
         ? "No selected HTML Artboard."
         : results.map((result) => summarizeHtmlArtboardFusionPatchApplyResult(result)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        dryRun: !confirmApply || hasPreconditionFailure,
+        confirmApply,
+        count: results.length,
+        appliedCount,
+        saved,
+        preconditionFailed: hasPreconditionFailure,
+        reason: overallReason,
+        results,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument === true;
+    const confirmApply = args.confirmApply === true;
+    let saved = false;
+    let appliedCount = 0;
+    let cowartUrl = null;
+    let snapshot = null;
+
+    if (htmlArtboards.length > 0) {
+      const loaded = await loadCanvasSnapshot(args);
+      cowartUrl = loaded.cowartUrl;
+      snapshot = loaded.snapshot;
+    }
+
+    const plannedResults = htmlArtboards.map((artboard) => {
+      const shapeRecord = snapshot?.store?.[artboard.shapeId];
+      const planArtboard =
+        shapeRecord?.meta?.cowartHtmlArtboard === true
+          ? {
+              ...artboard,
+              runtimeDocument: shapeRecord.meta.runtimeDocument,
+            }
+          : artboard;
+      let plan = createHtmlArtboardMockFusionPatchAssetPlan(planArtboard, args);
+
+      if (!shapeRecord) {
+        plan = {
+          ...plan,
+          canApply: false,
+          reason: `Missing shape record in canvas snapshot: ${artboard.shapeId}`,
+        };
+      } else if (shapeRecord.meta?.cowartHtmlArtboard !== true) {
+        plan = {
+          ...plan,
+          canApply: false,
+          reason: `Selected shape is not an HTML Artboard in canvas snapshot: ${artboard.shapeId}`,
+        };
+      }
+
+      return {
+        ...plan,
+        applied: false,
+      };
+    });
+
+    const hasPreconditionFailure = plannedResults.some((result) => result.preconditionFailed === true);
+    const overallReason = hasPreconditionFailure ? "One or more precondition checks failed" : null;
+    const applyResults =
+      confirmApply && hasPreconditionFailure
+        ? plannedResults.map((result) =>
+            result.preconditionFailed === true
+              ? result
+              : {
+                  ...result,
+                  canApply: false,
+                  reason: overallReason,
+                }
+          )
+        : plannedResults.map((result) => {
+            if (!confirmApply || result.canApply !== true) {
+              return result;
+            }
+
+            const shapeRecord = snapshot?.store?.[result.shapeId];
+            if (!shapeRecord) {
+              return {
+                ...result,
+                canApply: false,
+                reason: `Missing shape record in canvas snapshot: ${result.shapeId}`,
+              };
+            }
+
+            snapshot.store[result.shapeId] =
+              applyHtmlArtboardMockFusionPatchAssetDocumentToShapeRecord(
+                shapeRecord,
+                result.proposedDocument
+              );
+            appliedCount += 1;
+
+            return {
+              ...result,
+              applied: true,
+              reason: "Applied",
+            };
+          });
+
+    const results = applyResults.map((result) => {
+      if (!includeProposedDocument) {
+        const { proposedDocument: _proposedDocument, ...compactResult } = result;
+        return compactResult;
+      }
+
+      return result;
+    });
+
+    if (confirmApply && !hasPreconditionFailure && appliedCount > 0) {
+      await saveCanvasSnapshot(cowartUrl, snapshot);
+      saved = true;
+    }
+
+    const summary =
+      results.length === 0
+        ? "No selected HTML Artboard."
+        : results.map((result) => summarizeHtmlArtboardMockFusionPatchAssetResult(result)).join("\n");
 
     sendResult(id, {
       content: [{ type: "text", text: summary }],
