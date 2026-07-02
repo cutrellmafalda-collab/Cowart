@@ -12,6 +12,10 @@ import {
   summarizeHtmlArtboardEditProposal,
 } from "./htmlArtboardEditProposal.mjs";
 import {
+  createHtmlArtboardFusionPatchProposal,
+  summarizeHtmlArtboardFusionPatchProposal,
+} from "./htmlArtboardFusionPatchProposal.mjs";
+import {
   applyHtmlArtboardDocumentToShapeRecord,
   createHtmlArtboardApplyPlan,
   summarizeHtmlArtboardApplyResult,
@@ -22,6 +26,7 @@ const SERVER_VERSION = "0.1.1";
 const TOOL_GET_SELECTION = "get_cowart_selection";
 const TOOL_GET_SELECTED_HTML_ARTBOARD = "get_cowart_selected_html_artboard";
 const TOOL_PROPOSE_HTML_ARTBOARD_EDIT = "propose_cowart_html_artboard_edit";
+const TOOL_PROPOSE_HTML_ARTBOARD_FUSION_PATCH = "propose_cowart_html_artboard_fusion_patch";
 const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
@@ -640,6 +645,72 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_PROPOSE_HTML_ARTBOARD_FUSION_PATCH,
+      title: "Propose Cowart HTML Artboard FusionPatch",
+      description:
+        "Return a dry-run FusionPatch management proposal for the currently selected Cowart HTML Artboard without modifying the canvas.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          patchId: {
+            type: "string",
+            description: "Existing FusionPatch id for update/delete/show/hide/rename/update_region operations.",
+          },
+          operation: {
+            type: "string",
+            enum: ["create", "update", "delete", "show", "hide", "rename", "update_region"],
+            description: "Dry-run FusionPatch operation to propose.",
+          },
+          targetSelector: {
+            type: "string",
+            description: "Selector for a proposed new FusionPatch target.",
+          },
+          targetSourceText: {
+            type: "string",
+            description: "Source text for a proposed new FusionPatch target.",
+          },
+          name: {
+            type: "string",
+            description: "Proposed FusionPatch name.",
+          },
+          prompt: {
+            type: "string",
+            description: "Proposed FusionPatch prompt.",
+          },
+          region: {
+            type: "object",
+            description: "Proposed FusionPatch region with x/y/w/h.",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              w: { type: "number" },
+              h: { type: "number" },
+            },
+            additionalProperties: true,
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to true.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_APPLY_HTML_ARTBOARD_EDIT,
       title: "Apply Cowart HTML Artboard Edit",
       description:
@@ -824,6 +895,38 @@ async function handleToolCall(id, params) {
       proposals.length === 0
         ? "No selected HTML Artboard."
         : proposals.map((proposal) => summarizeHtmlArtboardEditProposal(proposal)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        count: proposals.length,
+        dryRun: true,
+        proposals,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_PROPOSE_HTML_ARTBOARD_FUSION_PATCH) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument !== false;
+    const proposals = htmlArtboards.map((artboard) => {
+      const proposal = createHtmlArtboardFusionPatchProposal(artboard, args);
+
+      if (includeProposedDocument) {
+        return proposal;
+      }
+
+      const { proposedDocument: _proposedDocument, ...compactProposal } = proposal;
+      return compactProposal;
+    });
+    const summary =
+      proposals.length === 0
+        ? "No selected HTML Artboard."
+        : proposals.map((proposal) => summarizeHtmlArtboardFusionPatchProposal(proposal)).join("\n");
 
     sendResult(id, {
       content: [{ type: "text", text: summary }],

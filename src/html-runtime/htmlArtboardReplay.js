@@ -6,6 +6,11 @@ const REPLAY_MUTATION_TYPES = new Set([
   'html_update',
   'css_update',
   'fusion_patch_create',
+  'fusion_patch_update',
+  'fusion_patch_delete',
+  'fusion_patch_visibility_update',
+  'fusion_patch_region_update',
+  'fusion_patch_rename',
   'document_meta_update'
 ])
 
@@ -48,6 +53,29 @@ function appendReplayHistory(document, mutation) {
       }
     ]
   }
+}
+
+function replaceFusionPatch(document, patchId, nextPatch) {
+  const patch = ensureFusionPatch(nextPatch)
+
+  return {
+    ...document,
+    fusionPatches: document.fusionPatches.map((existingPatch) =>
+      existingPatch.id === patchId ? patch : existingPatch
+    )
+  }
+}
+
+function updateFusionPatch(document, patchId, updates) {
+  if (!isRecord(updates)) return document
+
+  const existingPatch = document.fusionPatches.find((patch) => patch.id === patchId)
+  if (!existingPatch) return document
+
+  return replaceFusionPatch(document, patchId, {
+    ...existingPatch,
+    ...deepClone(updates)
+  })
 }
 
 function getInitialSourceValue(options, meta, key, fallback) {
@@ -111,6 +139,45 @@ export function applyHtmlArtboardMutation(document, mutation, options = {}) {
         fusionPatches: [...nextDocument.fusionPatches, patch]
       }
     }
+  }
+
+  if (mutationType === 'fusion_patch_update' && typeof payload.patchId === 'string') {
+    if (isRecord(payload.nextPatch)) {
+      nextDocument = replaceFusionPatch(nextDocument, payload.patchId, payload.nextPatch)
+    } else {
+      nextDocument = updateFusionPatch(nextDocument, payload.patchId, payload.updates)
+    }
+  }
+
+  if (mutationType === 'fusion_patch_delete' && typeof payload.patchId === 'string') {
+    nextDocument = {
+      ...nextDocument,
+      fusionPatches: nextDocument.fusionPatches.filter((patch) => patch.id !== payload.patchId)
+    }
+  }
+
+  if (
+    mutationType === 'fusion_patch_visibility_update' &&
+    typeof payload.patchId === 'string' &&
+    typeof payload.nextVisible === 'boolean'
+  ) {
+    nextDocument = updateFusionPatch(nextDocument, payload.patchId, { visible: payload.nextVisible })
+  }
+
+  if (
+    mutationType === 'fusion_patch_region_update' &&
+    typeof payload.patchId === 'string' &&
+    isRecord(payload.nextRegion)
+  ) {
+    nextDocument = updateFusionPatch(nextDocument, payload.patchId, { region: payload.nextRegion })
+  }
+
+  if (
+    mutationType === 'fusion_patch_rename' &&
+    typeof payload.patchId === 'string' &&
+    typeof payload.nextName === 'string'
+  ) {
+    nextDocument = updateFusionPatch(nextDocument, payload.patchId, { name: payload.nextName })
   }
 
   if (mutationType === 'document_meta_update' && isRecord(payload.meta)) {
