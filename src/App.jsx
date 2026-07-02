@@ -398,10 +398,9 @@ function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument
   }
 
   if (existingPreviewShape) {
-    editor.updateShapes([
+    editor.store.put([
       {
-        id: existingPreviewShape.id,
-        type: 'image',
+        ...existingPreviewShape,
         x: selectedShape.x,
         y: selectedShape.y,
         rotation: selectedShape.rotation ?? 0,
