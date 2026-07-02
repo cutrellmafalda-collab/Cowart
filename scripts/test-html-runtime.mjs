@@ -56,6 +56,11 @@ import {
   validateRenderFingerprint,
   withRenderFingerprint
 } from '../src/html-runtime/renderFingerprint.js'
+import {
+  createHtmlArtboardThumbnailAltText,
+  createHtmlArtboardThumbnailDataUrl,
+  createHtmlArtboardThumbnailSvg
+} from '../src/html-runtime/htmlArtboardThumbnail.js'
 
 const forbiddenUiFields = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
@@ -729,6 +734,83 @@ test('validateRenderFingerprint returns mismatch when document changes after fin
 
   assert.equal(result.status, 'mismatch')
   assert.equal(result.matches, false)
+})
+
+test('createHtmlArtboardThumbnailSvg returns svg string', () => {
+  const svg = createHtmlArtboardThumbnailSvg(createHtmlArtboardDocument())
+
+  assert.equal(typeof svg, 'string')
+  assert.equal(svg.startsWith('<svg'), true)
+})
+
+test('thumbnail svg includes foreignObject', () => {
+  const svg = createHtmlArtboardThumbnailSvg(createHtmlArtboardDocument())
+
+  assert.equal(svg.includes('<foreignObject'), true)
+})
+
+test('thumbnail svg includes document html', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section><h1>Thumbnail HTML</h1></section>'
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes(document.html), true)
+})
+
+test('thumbnail svg includes document css', () => {
+  const document = createHtmlArtboardDocument({
+    css: '.thumbnail-test { color: teal; }'
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes(document.css), true)
+})
+
+test('thumbnail svg includes document width/height', () => {
+  const svg = createHtmlArtboardThumbnailSvg(
+    createHtmlArtboardDocument({ width: 640, height: 360 })
+  )
+
+  assert.equal(svg.includes('width="640"'), true)
+  assert.equal(svg.includes('height="360"'), true)
+})
+
+test('thumbnail helper does not mutate input', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Immutable thumbnail</section>',
+    css: 'section { color: black; }'
+  })
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardThumbnailSvg(document)
+  createHtmlArtboardThumbnailDataUrl(document)
+  createHtmlArtboardThumbnailAltText(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('createHtmlArtboardThumbnailDataUrl returns data:image/svg+xml', () => {
+  const dataUrl = createHtmlArtboardThumbnailDataUrl(createHtmlArtboardDocument())
+
+  assert.equal(dataUrl.startsWith('data:image/svg+xml;charset=utf-8,'), true)
+})
+
+test('thumbnail data url can be decoded to SVG text', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Decoded thumbnail</section>'
+  })
+  const dataUrl = createHtmlArtboardThumbnailDataUrl(document)
+  const decodedSvg = decodeURIComponent(dataUrl.split(',')[1])
+
+  assert.equal(decodedSvg.startsWith('<svg'), true)
+  assert.equal(decodedSvg.includes(document.html), true)
+})
+
+test('thumbnail alt text includes HTML Artboard', () => {
+  const altText = createHtmlArtboardThumbnailAltText(createHtmlArtboardDocument())
+
+  assert.equal(altText.includes('HTML Artboard'), true)
 })
 
 test('preview srcdoc returns string', () => {

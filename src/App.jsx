@@ -65,6 +65,10 @@ import {
   createHtmlArtboardExportFileName
 } from './html-runtime/htmlArtboardExport.js'
 import { createHtmlArtboardSourceSnapshot } from './html-runtime/htmlArtboardSource.js'
+import {
+  createHtmlArtboardThumbnailAltText,
+  createHtmlArtboardThumbnailDataUrl
+} from './html-runtime/htmlArtboardThumbnail.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -74,6 +78,7 @@ const SELECTION_STATE_ELEMENT_ID = 'cowart-selection-state'
 const AI_IMAGE_TOOL_ID = 'ai-image'
 const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
 const HTML_ARTBOARD_TOOL_LABEL = 'HTML Artboard'
+const HTML_ARTBOARD_PREVIEW_VERSION = 1
 const AI_IMAGE_HOLDER_LABEL = 'AI 图片'
 const AI_IMAGE_HOLDER_DEFAULT_W = 512
 const AI_IMAGE_HOLDER_DEFAULT_H = 683
@@ -281,6 +286,148 @@ function createHtmlArtboardAtViewportCenter(editor) {
   })
   editor.select(shapeId)
   editor.setCurrentTool('select.idle')
+}
+
+function sanitizeTldrawIdPart(value) {
+  const sanitized = String(value ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return sanitized || 'html-artboard'
+}
+
+function getHtmlArtboardPreviewSize(runtimeDocument, shape) {
+  const shapeWidth = Number(shape?.props?.w)
+  const shapeHeight = Number(shape?.props?.h)
+
+  return {
+    w: Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth : runtimeDocument.width,
+    h: Number.isFinite(shapeHeight) && shapeHeight > 0 ? shapeHeight : runtimeDocument.height
+  }
+}
+
+function createHtmlArtboardPreviewAssetId(shapeId) {
+  return `asset:html-artboard-preview-${sanitizeTldrawIdPart(shapeId)}`
+}
+
+function findHtmlArtboardPreviewShape(editor, sourceShapeId) {
+  return (
+    editor
+      .getCurrentPageShapes()
+      .find(
+        (shape) =>
+          shape?.type === 'image' &&
+          shape.meta?.cowartHtmlArtboardPreview === true &&
+          shape.meta?.sourceHtmlArtboardShapeId === sourceShapeId
+      ) ?? null
+  )
+}
+
+function createHtmlArtboardPreviewMeta(selectedShape, runtimeDocument) {
+  return {
+    cowartHtmlArtboardPreview: true,
+    cowartHtmlArtboardPreviewVersion: HTML_ARTBOARD_PREVIEW_VERSION,
+    sourceHtmlArtboardShapeId: selectedShape.id,
+    sourceHtmlArtboardDocumentId: runtimeDocument.id,
+    sourceRenderFingerprint: runtimeDocument.renderFingerprint ?? null,
+    refreshedAt: new Date().toISOString()
+  }
+}
+
+function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument) {
+  const size = getHtmlArtboardPreviewSize(runtimeDocument, selectedShape)
+  const thumbnailDocument = {
+    ...runtimeDocument,
+    width: size.w,
+    height: size.h
+  }
+  const dataUrl = createHtmlArtboardThumbnailDataUrl(thumbnailDocument)
+  const altText = createHtmlArtboardThumbnailAltText(thumbnailDocument)
+  const existingPreviewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
+  const assetId =
+    existingPreviewShape?.props?.assetId ?? createHtmlArtboardPreviewAssetId(selectedShape.id)
+  const previewMeta = createHtmlArtboardPreviewMeta(selectedShape, runtimeDocument)
+  const assetRecord = {
+    id: assetId,
+    typeName: 'asset',
+    type: 'image',
+    props: {
+      name: `${HTML_ARTBOARD_TOOL_LABEL} Preview.svg`,
+      src: dataUrl,
+      w: size.w,
+      h: size.h,
+      fileSize: dataUrl.length,
+      mimeType: 'image/svg+xml',
+      isAnimated: false
+    },
+    meta: previewMeta
+  }
+  const imageProps = {
+    w: size.w,
+    h: size.h,
+    assetId,
+    playing: true,
+    url: '',
+    crop: null,
+    flipX: false,
+    flipY: false,
+    altText
+  }
+
+  editor.markHistoryStoppingPoint('refresh-html-artboard-canvas-preview')
+
+  if (editor.getAsset(assetId)) {
+    editor.updateAssets([
+      {
+        id: assetId,
+        type: 'image',
+        props: assetRecord.props,
+        meta: assetRecord.meta
+      }
+    ])
+  } else {
+    editor.createAssets([assetRecord])
+  }
+
+  if (existingPreviewShape) {
+    editor.updateShapes([
+      {
+        id: existingPreviewShape.id,
+        type: 'image',
+        x: selectedShape.x,
+        y: selectedShape.y,
+        rotation: selectedShape.rotation ?? 0,
+        parentId: selectedShape.parentId,
+        isLocked: true,
+        opacity: 1,
+        props: {
+          ...existingPreviewShape.props,
+          ...imageProps
+        },
+        meta: {
+          ...existingPreviewShape.meta,
+          ...previewMeta
+        }
+      }
+    ])
+  } else {
+    editor.createShape({
+      id: createShapeId(),
+      type: 'image',
+      x: selectedShape.x,
+      y: selectedShape.y,
+      rotation: selectedShape.rotation ?? 0,
+      parentId: selectedShape.parentId,
+      isLocked: true,
+      opacity: 1,
+      props: imageProps,
+      meta: previewMeta
+    })
+  }
+
+  editor.select(selectedShape.id)
 }
 
 function startEditingAnnotationArrowLabel(editor, arrowId) {
@@ -699,6 +846,11 @@ function CowartHtmlArtboardPreviewControls() {
           title="HTML Artboard preview"
         />
       </section>
+      <CowartHtmlArtboardCanvasPreviewControls
+        editor={editor}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+      />
       <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
       <CowartHtmlArtboardEditorControls
         editor={editor}
@@ -713,6 +865,43 @@ function CowartHtmlArtboardPreviewControls() {
       />
       <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
     </div>
+  )
+}
+
+function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, selectedShape }) {
+  const [previewStatus, setPreviewStatus] = useState('')
+
+  useEffect(() => {
+    setPreviewStatus('')
+  }, [selectedShape.id, runtimeDocument.html, runtimeDocument.css])
+
+  function refreshCanvasPreview() {
+    try {
+      refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument)
+      setPreviewStatus('Canvas preview refreshed')
+    } catch {
+      setPreviewStatus('Refresh failed')
+    }
+  }
+
+  return (
+    <section className="cowart-html-canvas-preview" aria-label="HTML Artboard canvas preview">
+      <div className="cowart-html-preview-heading">
+        <span>Canvas Preview</span>
+      </div>
+      <div className="cowart-html-canvas-preview-action">
+        <button
+          className="cowart-html-canvas-preview-refresh"
+          onClick={refreshCanvasPreview}
+          type="button"
+        >
+          Refresh Canvas Preview
+        </button>
+        {previewStatus ? (
+          <span className="cowart-html-canvas-preview-status">{previewStatus}</span>
+        ) : null}
+      </div>
+    </section>
   )
 }
 

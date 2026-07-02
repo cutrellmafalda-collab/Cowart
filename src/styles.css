@@ -201,6 +201,45 @@ body {
   border-radius: var(--tl-radius-2);
 }
 
+.cowart-html-canvas-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.cowart-html-canvas-preview-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cowart-html-canvas-preview-refresh {
+  height: 28px;
+  padding: 0 10px;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+  border-radius: var(--tl-radius-2);
+  cursor: pointer;
+}
+
+.cowart-html-canvas-preview-refresh:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.cowart-html-canvas-preview-status {
+  color: var(--tl-color-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
 .cowart-html-artboard-source {
   display: flex;
   flex-direction: column;
