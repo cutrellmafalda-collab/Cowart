@@ -16,6 +16,10 @@ import {
   summarizeHtmlArtboardFusionPatchProposal,
 } from "./htmlArtboardFusionPatchProposal.mjs";
 import {
+  createHtmlArtboardAiGenerationProposal,
+  summarizeHtmlArtboardAiGenerationProposal,
+} from "./htmlArtboardAiGenerationProposal.mjs";
+import {
   applyHtmlArtboardDocumentToShapeRecord,
   createHtmlArtboardApplyPlan,
   summarizeHtmlArtboardApplyResult,
@@ -37,6 +41,8 @@ const TOOL_GET_SELECTION = "get_cowart_selection";
 const TOOL_GET_SELECTED_HTML_ARTBOARD = "get_cowart_selected_html_artboard";
 const TOOL_PROPOSE_HTML_ARTBOARD_EDIT = "propose_cowart_html_artboard_edit";
 const TOOL_PROPOSE_HTML_ARTBOARD_FUSION_PATCH = "propose_cowart_html_artboard_fusion_patch";
+const TOOL_PROPOSE_HTML_ARTBOARD_AI_FUSION_PATCH_GENERATION =
+  "propose_cowart_html_artboard_ai_fusion_patch_generation";
 const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_APPLY_HTML_ARTBOARD_FUSION_PATCH = "apply_cowart_html_artboard_fusion_patch";
 const TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET =
@@ -724,6 +730,72 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_PROPOSE_HTML_ARTBOARD_AI_FUSION_PATCH_GENERATION,
+      title: "Propose Cowart HTML Artboard AI FusionPatch Generation",
+      description:
+        "Return a dry-run AI provider request and payload preview for a selected Cowart HTML Artboard FusionPatch without calling any provider or modifying the canvas.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          patchId: {
+            type: "string",
+            description: "FusionPatch id to preview generation for. Required when multiple patches exist.",
+          },
+          provider: {
+            type: "string",
+            description: "AI provider name for payload preview. Defaults to openai.",
+          },
+          model: {
+            type: "string",
+            description: "Provider model for payload preview.",
+          },
+          size: {
+            type: "string",
+            description: "Requested image size for payload preview.",
+          },
+          quality: {
+            type: "string",
+            description: "Requested image quality for payload preview.",
+          },
+          outputFormat: {
+            type: "string",
+            description: "Requested output format such as png, jpeg, or webp.",
+          },
+          background: {
+            type: "string",
+            description: "Requested background handling such as transparent, opaque, or auto.",
+          },
+          promptOverride: {
+            type: "string",
+            description: "Optional prompt override for the provider payload preview.",
+          },
+          includeDocument: {
+            type: "boolean",
+            description: "Include the full runtime document in providerRequest. Defaults to false.",
+          },
+          includeProviderPayload: {
+            type: "boolean",
+            description: "Include providerPayload in structuredContent. Defaults to true.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_APPLY_HTML_ARTBOARD_EDIT,
       title: "Apply Cowart HTML Artboard Edit",
       description:
@@ -1094,6 +1166,30 @@ async function handleToolCall(id, params) {
       proposals.length === 0
         ? "No selected HTML Artboard."
         : proposals.map((proposal) => summarizeHtmlArtboardFusionPatchProposal(proposal)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        count: proposals.length,
+        dryRun: true,
+        proposals,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_PROPOSE_HTML_ARTBOARD_AI_FUSION_PATCH_GENERATION) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const proposals = htmlArtboards.map((artboard) =>
+      createHtmlArtboardAiGenerationProposal(artboard, args)
+    );
+    const summary =
+      proposals.length === 0
+        ? "No selected HTML Artboard."
+        : proposals.map((proposal) => summarizeHtmlArtboardAiGenerationProposal(proposal)).join("\n");
 
     sendResult(id, {
       content: [{ type: "text", text: summary }],
