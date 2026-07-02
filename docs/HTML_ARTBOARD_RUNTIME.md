@@ -28,6 +28,8 @@ The HTML Artboard Runtime is a source document layer for future HTML/CSS visual 
 
 The runtime document is source-level data. It does not own Cowart UI state such as zoom, active tabs, selected selectors, or workspace layout.
 
+Phase 18 adds pure `documentRef` helpers for future externalized runtime document storage. Current runtime documents remain inline in `shape.meta.runtimeDocument`.
+
 ## Phase 1 Scope
 
 This phase only adds the runtime schema and source-level fingerprint helpers.

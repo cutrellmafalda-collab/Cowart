@@ -6,6 +6,17 @@ import {
   ensureHtmlArtboardDocument
 } from '../src/html-runtime/htmlCanvasDocument.js'
 import {
+  createHtmlArtboardDocumentPath,
+  createHtmlArtboardDocumentRef,
+  createHtmlArtboardMetaWithDocumentRef,
+  estimateHtmlArtboardDocumentSize,
+  hydrateHtmlArtboardShapeWithRuntimeDocument,
+  isHtmlArtboardDocumentRef,
+  sanitizeHtmlArtboardDocumentId,
+  shouldExternalizeHtmlArtboardDocument,
+  splitHtmlArtboardRuntimeDocumentFromShape
+} from '../src/html-runtime/htmlArtboardDocumentRef.js'
+import {
   cowartShapeToHtmlArtboard,
   htmlArtboardToCowartShape,
   isCowartHtmlArtboardShape
@@ -163,6 +174,262 @@ test('runtime document does not include UI fields', () => {
 
   assertNoUiFields(document)
   assertNoUiFields(cloned)
+})
+
+test('createHtmlArtboardDocumentRef returns kind html-artboard-document-ref', () => {
+  const ref = createHtmlArtboardDocumentRef({ id: 'artboard:ref-kind' })
+
+  assert.equal(ref.kind, 'html-artboard-document-ref')
+  assert.equal(ref.version, 1)
+})
+
+test('createHtmlArtboardDocumentRef uses document id', () => {
+  const ref = createHtmlArtboardDocumentRef({ id: 'artboard:document-ref-id' })
+
+  assert.equal(ref.documentId, 'artboard-document-ref-id')
+})
+
+test('createHtmlArtboardDocumentRef sanitizes document id', () => {
+  const ref = createHtmlArtboardDocumentRef({ id: 'html artboard/unsafe:id' })
+
+  assert.equal(ref.documentId, 'html-artboard-unsafe-id')
+})
+
+test('createHtmlArtboardDocumentRef creates path', () => {
+  const ref = createHtmlArtboardDocumentRef(
+    { id: 'html-artboard:path-test' },
+    { pageId: 'page:one' }
+  )
+
+  assert.equal(ref.path, 'pages/page-one/html-artboards/html-artboard-path-test.json')
+})
+
+test('createHtmlArtboardDocumentRef does not mutate input', () => {
+  const document = createHtmlArtboardDocument({ id: 'html-artboard:immutable-ref' })
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardDocumentRef(document, { pageId: 'page:immutable' })
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('isHtmlArtboardDocumentRef detects valid ref', () => {
+  const ref = createHtmlArtboardDocumentRef({ id: 'html-artboard:valid-ref' })
+
+  assert.equal(isHtmlArtboardDocumentRef(ref), true)
+})
+
+test('isHtmlArtboardDocumentRef rejects invalid value', () => {
+  assert.equal(isHtmlArtboardDocumentRef({ kind: 'other-ref' }), false)
+  assert.equal(isHtmlArtboardDocumentRef(null), false)
+})
+
+test('estimateHtmlArtboardDocumentSize returns number', () => {
+  const size = estimateHtmlArtboardDocumentSize(createHtmlArtboardDocument())
+
+  assert.equal(typeof size, 'number')
+  assert.equal(size > 0, true)
+})
+
+test('shouldExternalizeHtmlArtboardDocument false for small document', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Small</section>' })
+
+  assert.equal(shouldExternalizeHtmlArtboardDocument(document, { maxInlineBytes: 100000 }), false)
+})
+
+test('shouldExternalizeHtmlArtboardDocument true when maxInlineBytes is small', () => {
+  const document = createHtmlArtboardDocument({ html: '<section>Large enough</section>' })
+
+  assert.equal(shouldExternalizeHtmlArtboardDocument(document, { maxInlineBytes: 1 }), true)
+})
+
+test('createHtmlArtboardMetaWithDocumentRef adds runtimeDocumentRef', () => {
+  const ref = createHtmlArtboardDocumentRef({ id: 'html-artboard:meta-ref' })
+  const meta = createHtmlArtboardMetaWithDocumentRef({ cowartHtmlArtboard: true }, ref)
+
+  assert.equal(meta.runtimeDocumentRef.documentId, 'html-artboard-meta-ref')
+})
+
+test('createHtmlArtboardMetaWithDocumentRef preserves cowartHtmlArtboard', () => {
+  const meta = createHtmlArtboardMetaWithDocumentRef(
+    { cowartHtmlArtboard: true },
+    createHtmlArtboardDocumentRef({ id: 'html-artboard:meta-preserve' })
+  )
+
+  assert.equal(meta.cowartHtmlArtboard, true)
+})
+
+test('createHtmlArtboardMetaWithDocumentRef preserves runtimeDocument by default', () => {
+  const runtimeDocument = createHtmlArtboardDocument({ id: 'html-artboard:inline-default' })
+  const meta = createHtmlArtboardMetaWithDocumentRef(
+    { cowartHtmlArtboard: true, runtimeDocument },
+    createHtmlArtboardDocumentRef(runtimeDocument)
+  )
+
+  assert.equal(meta.runtimeDocument.id, runtimeDocument.id)
+})
+
+test('createHtmlArtboardMetaWithDocumentRef removes runtimeDocument when keepInlineDocument false', () => {
+  const runtimeDocument = createHtmlArtboardDocument({ id: 'html-artboard:inline-remove' })
+  const meta = createHtmlArtboardMetaWithDocumentRef(
+    { cowartHtmlArtboard: true, runtimeDocument },
+    createHtmlArtboardDocumentRef(runtimeDocument),
+    { keepInlineDocument: false }
+  )
+
+  assert.equal(Object.hasOwn(meta, 'runtimeDocument'), false)
+})
+
+test('createHtmlArtboardMetaWithDocumentRef does not mutate input meta', () => {
+  const runtimeDocument = createHtmlArtboardDocument({ id: 'html-artboard:meta-immutable' })
+  const meta = { cowartHtmlArtboard: true, runtimeDocument }
+  const before = JSON.stringify(meta)
+
+  createHtmlArtboardMetaWithDocumentRef(meta, createHtmlArtboardDocumentRef(runtimeDocument), {
+    keepInlineDocument: false
+  })
+
+  assert.equal(JSON.stringify(meta), before)
+})
+
+test('splitHtmlArtboardRuntimeDocumentFromShape returns changed false when no runtimeDocument', () => {
+  const shape = {
+    id: 'shape:no-runtime-document',
+    type: 'frame',
+    meta: { cowartHtmlArtboard: true }
+  }
+  const result = splitHtmlArtboardRuntimeDocumentFromShape(shape)
+
+  assert.equal(result.changed, false)
+  assert.equal(result.runtimeDocument, null)
+  assert.equal(result.documentRef, null)
+})
+
+test('splitHtmlArtboardRuntimeDocumentFromShape returns documentRef when runtimeDocument exists', () => {
+  const document = createHtmlArtboardDocument({ id: 'html-artboard:split-ref' })
+  const result = splitHtmlArtboardRuntimeDocumentFromShape({
+    id: 'shape:split-ref',
+    type: 'frame',
+    parentId: 'page:split',
+    meta: { cowartHtmlArtboard: true, runtimeDocument: document }
+  })
+
+  assert.equal(result.changed, true)
+  assert.equal(result.documentRef.documentId, 'html-artboard-split-ref')
+  assert.equal(result.shapeRecord.meta.runtimeDocumentRef.documentId, 'html-artboard-split-ref')
+})
+
+test('splitHtmlArtboardRuntimeDocumentFromShape preserves inline runtimeDocument by default', () => {
+  const document = createHtmlArtboardDocument({ id: 'html-artboard:split-inline' })
+  const result = splitHtmlArtboardRuntimeDocumentFromShape({
+    id: 'shape:split-inline',
+    type: 'frame',
+    meta: { cowartHtmlArtboard: true, runtimeDocument: document }
+  })
+
+  assert.equal(result.shapeRecord.meta.runtimeDocument.id, document.id)
+})
+
+test('splitHtmlArtboardRuntimeDocumentFromShape can remove inline runtimeDocument with keepInlineDocument false', () => {
+  const document = createHtmlArtboardDocument({ id: 'html-artboard:split-external' })
+  const result = splitHtmlArtboardRuntimeDocumentFromShape(
+    {
+      id: 'shape:split-external',
+      type: 'frame',
+      meta: { cowartHtmlArtboard: true, runtimeDocument: document }
+    },
+    { keepInlineDocument: false }
+  )
+
+  assert.equal(Object.hasOwn(result.shapeRecord.meta, 'runtimeDocument'), false)
+  assert.equal(result.shapeRecord.meta.runtimeDocumentRef.documentId, 'html-artboard-split-external')
+})
+
+test('splitHtmlArtboardRuntimeDocumentFromShape does not mutate input shape', () => {
+  const shape = {
+    id: 'shape:split-immutable',
+    type: 'frame',
+    meta: {
+      cowartHtmlArtboard: true,
+      runtimeDocument: createHtmlArtboardDocument({ id: 'html-artboard:split-immutable' })
+    }
+  }
+  const before = JSON.stringify(shape)
+
+  splitHtmlArtboardRuntimeDocumentFromShape(shape, { keepInlineDocument: false })
+
+  assert.equal(JSON.stringify(shape), before)
+})
+
+test('hydrateHtmlArtboardShapeWithRuntimeDocument restores runtimeDocument', () => {
+  const hydrated = hydrateHtmlArtboardShapeWithRuntimeDocument(
+    {
+      id: 'shape:hydrate',
+      type: 'frame',
+      meta: { cowartHtmlArtboard: true }
+    },
+    { id: 'html-artboard:hydrate', html: '<section>Hydrated</section>' }
+  )
+
+  assert.equal(hydrated.meta.runtimeDocument.id, 'html-artboard:hydrate')
+  assert.equal(hydrated.meta.runtimeDocument.html, '<section>Hydrated</section>')
+})
+
+test('hydrateHtmlArtboardShapeWithRuntimeDocument preserves runtimeDocumentRef', () => {
+  const ref = createHtmlArtboardDocumentRef({ id: 'html-artboard:hydrate-ref' })
+  const hydrated = hydrateHtmlArtboardShapeWithRuntimeDocument(
+    {
+      id: 'shape:hydrate-ref',
+      type: 'frame',
+      meta: { cowartHtmlArtboard: true, runtimeDocumentRef: ref }
+    },
+    { id: 'html-artboard:hydrate-ref' }
+  )
+
+  assert.equal(hydrated.meta.runtimeDocumentRef.documentId, ref.documentId)
+})
+
+test('hydrateHtmlArtboardShapeWithRuntimeDocument does not mutate input shape', () => {
+  const shape = {
+    id: 'shape:hydrate-immutable',
+    type: 'frame',
+    meta: {
+      cowartHtmlArtboard: true,
+      runtimeDocumentRef: createHtmlArtboardDocumentRef({ id: 'html-artboard:hydrate-immutable' })
+    }
+  }
+  const before = JSON.stringify(shape)
+
+  hydrateHtmlArtboardShapeWithRuntimeDocument(shape, { id: 'html-artboard:hydrate-immutable' })
+
+  assert.equal(JSON.stringify(shape), before)
+})
+
+test('sanitizeHtmlArtboardDocumentId handles empty value', () => {
+  assert.equal(sanitizeHtmlArtboardDocumentId(''), 'html-artboard')
+})
+
+test('sanitizeHtmlArtboardDocumentId removes unsafe characters', () => {
+  assert.equal(sanitizeHtmlArtboardDocumentId('../bad\\id:one'), 'bad-id-one')
+})
+
+test('createHtmlArtboardDocumentPath does not include ..', () => {
+  const path = createHtmlArtboardDocumentPath({
+    documentId: '../bad-document',
+    pageId: '../bad-page'
+  })
+
+  assert.equal(path.includes('..'), false)
+})
+
+test('createHtmlArtboardDocumentPath uses forward slashes', () => {
+  const path = createHtmlArtboardDocumentPath(
+    { documentId: 'html-artboard:path-slash', pageId: 'page:path-slash' },
+    { baseDir: 'canvas\\documents' }
+  )
+
+  assert.equal(path.includes('\\'), false)
+  assert.equal(path, 'canvas/documents/pages/page-path-slash/html-artboards/html-artboard-path-slash.json')
 })
 
 test('extractHtmlArtboardPatchTargets returns data-node targets', () => {

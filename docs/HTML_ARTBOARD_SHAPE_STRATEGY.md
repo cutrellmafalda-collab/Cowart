@@ -164,6 +164,14 @@ Disadvantages:
 
 Recommendation: keep `shape.meta.runtimeDocument` in the short term. Introduce `runtimeDocumentRef` and page-local document files only after runtime behavior, replay, export, and asset handling are stable.
 
+Phase 18 introduces pure `runtimeDocumentRef` helpers as a storage spike only. No migration is performed, no files are read or written, and inline `shape.meta.runtimeDocument` remains the current source of truth. The document ref is future-facing: a later migration should be explicit, reversible, and able to keep inline data until the new storage path has been proven safe.
+
+Possible future file layout:
+
+```text
+canvas/pages/<page-id>/html-artboards/<document-id>.json
+```
+
 ## 9. Security Strategy
 
 HTML Artboard preview and export must continue to treat user HTML as untrusted source.
