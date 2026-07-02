@@ -2495,6 +2495,29 @@ test('applyHtmlArtboardMutation applies fusion_patch_mock_asset_generate', () =>
   assert.equal(updated.fusionPatches[0].status, 'mock-generated')
 })
 
+test('applyHtmlArtboardMutation applies fusion_patch_external_asset_attach', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:replay-external-asset' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const nextPatch = {
+    ...patch,
+    patchAssetId: 'external-fusion-patch-asset:replay',
+    patchAssetUrl: '/page-assets/page-1/replay.png',
+    status: 'generated',
+    provider: 'external-image-gen'
+  }
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'fusion_patch_external_asset_attach',
+    payload: {
+      patchId: patch.id,
+      nextPatch
+    }
+  })
+
+  assert.equal(updated.fusionPatches[0].patchAssetId, 'external-fusion-patch-asset:replay')
+  assert.equal(updated.fusionPatches[0].patchAssetUrl, '/page-assets/page-1/replay.png')
+  assert.equal(updated.fusionPatches[0].status, 'generated')
+})
+
 test('applyHtmlArtboardMutation applies document_meta_update', () => {
   const document = createHtmlArtboardDocument({ meta: { provider: 'mock' } })
   const updated = applyHtmlArtboardMutation(document, {

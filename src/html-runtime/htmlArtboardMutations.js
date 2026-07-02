@@ -11,7 +11,8 @@ export const HTML_ARTBOARD_MUTATION_TYPES = [
   'fusion_patch_visibility_update',
   'fusion_patch_region_update',
   'fusion_patch_rename',
-  'fusion_patch_mock_asset_generate'
+  'fusion_patch_mock_asset_generate',
+  'fusion_patch_external_asset_attach'
 ]
 
 function isRecord(value) {

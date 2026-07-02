@@ -1,5 +1,5 @@
 import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
-import { basename, extname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import readline from "node:readline";
 import { generateKeyBetween } from "fractional-indexing";
 import { createHtmlArtboardExportBundle } from "../src/html-runtime/htmlArtboardExport.js";
@@ -34,6 +34,11 @@ import {
   createHtmlArtboardMockFusionPatchAssetPlan,
   summarizeHtmlArtboardMockFusionPatchAssetResult,
 } from "./htmlArtboardMockFusionPatchAssetGeneration.mjs";
+import {
+  applyHtmlArtboardFusionPatchImageAttachDocumentToShapeRecord,
+  createHtmlArtboardFusionPatchImageAttachPlan,
+  summarizeHtmlArtboardFusionPatchImageAttachResult,
+} from "./htmlArtboardFusionPatchImageAttach.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
@@ -47,6 +52,8 @@ const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_APPLY_HTML_ARTBOARD_FUSION_PATCH = "apply_cowart_html_artboard_fusion_patch";
 const TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET =
   "generate_cowart_html_artboard_mock_fusion_patch_asset";
+const TOOL_ATTACH_HTML_ARTBOARD_FUSION_PATCH_IMAGE =
+  "attach_cowart_html_artboard_fusion_patch_image";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -340,6 +347,29 @@ function chooseIndex(store, parentId) {
 
 function firstSelectedShapeId(selection) {
   return selection?.selectedShapes?.length === 1 ? selection.selectedShapes[0]?.id : null;
+}
+
+function isAllowedExternalFusionPatchImageMimeType(mimeType) {
+  return mimeType === "image/png" || mimeType === "image/jpeg" || mimeType === "image/webp";
+}
+
+function createExternalFusionPatchAssetDescriptor({
+  fileName,
+  pageId,
+  patchId,
+  sourceStat,
+  mimeType,
+}) {
+  const patchAssetId = `external-fusion-patch-asset:${sanitizeIdPart(`${patchId}-${fileName}`)}`;
+
+  return {
+    patchAssetId,
+    patchAssetUrl: pageAssetUrl(pageId, fileName),
+    fileName,
+    relativePath: `pages/${pageDirName(pageId)}/assets/${fileName}`,
+    mimeType,
+    fileSize: sourceStat.size,
+  };
 }
 
 function htmlArtboardForMcp(artboard, { includeSource = true, includeJson = true } = {}) {
@@ -1020,6 +1050,89 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_ATTACH_HTML_ARTBOARD_FUSION_PATCH_IMAGE,
+      title: "Attach Cowart HTML Artboard FusionPatch Image",
+      description:
+        "Attach an already-generated local PNG, JPEG, or WebP image file to a selected Cowart HTML Artboard FusionPatch. Defaults to dry-run and requires confirmApply=true to copy the asset and save.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          cowartUrl: {
+            type: "string",
+            description: "Running Cowart URL, for example http://127.0.0.1:43217.",
+          },
+          patchId: {
+            type: "string",
+            description: "Existing FusionPatch id that should receive the generated image asset.",
+          },
+          imagePath: {
+            type: "string",
+            description: "Absolute local PNG, JPEG, or WebP image file produced by an external image generator.",
+          },
+          fileName: {
+            type: "string",
+            description: "Optional destination filename under the page-local assets folder.",
+          },
+          provider: {
+            type: "string",
+            description: "External generator label stored on the FusionPatch. Defaults to external-image-gen.",
+          },
+          generationRequest: {
+            type: "object",
+            description: "Optional generation request package to preserve with the patch metadata.",
+            additionalProperties: true,
+          },
+          allowOverwrite: {
+            type: "boolean",
+            description: "Allow replacing an existing patchAssetUrl on the target FusionPatch. Defaults to false.",
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to false.",
+          },
+          confirmApply: {
+            type: "boolean",
+            description: "Must be true to copy the generated image and save the selected HTML Artboard.",
+          },
+          expectedDocumentId: {
+            type: "string",
+            description: "Optional optimistic guard. If provided, it must match the current runtimeDocument id.",
+          },
+          expectedRenderFingerprint: {
+            type: "string",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument renderFingerprint.",
+          },
+          expectedMutationCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument mutationLog length.",
+          },
+          expectedFusionPatchCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument fusionPatches length.",
+          },
+        },
+        required: ["patchId", "imagePath"],
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -1550,6 +1663,199 @@ async function handleToolCall(id, params) {
       results.length === 0
         ? "No selected HTML Artboard."
         : results.map((result) => summarizeHtmlArtboardMockFusionPatchAssetResult(result)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        dryRun: !confirmApply || hasPreconditionFailure,
+        confirmApply,
+        count: results.length,
+        appliedCount,
+        saved,
+        preconditionFailed: hasPreconditionFailure,
+        reason: overallReason,
+        results,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_ATTACH_HTML_ARTBOARD_FUSION_PATCH_IMAGE) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument === true;
+    const confirmApply = args.confirmApply === true;
+    const patchId = nonEmptyString(args.patchId);
+    const imagePath = nonEmptyString(args.imagePath);
+    let saved = false;
+    let appliedCount = 0;
+    let cowartUrl = null;
+    let snapshot = null;
+    let sourceImagePath = null;
+    let sourceStat = null;
+    let sourceMimeType = null;
+
+    if (htmlArtboards.length > 0) {
+      if (!patchId) throw new Error("patchId is required.");
+      if (!imagePath) throw new Error("imagePath is required.");
+
+      sourceImagePath = pathResolve(imagePath);
+      sourceStat = await stat(sourceImagePath);
+      if (!sourceStat.isFile()) throw new Error(`imagePath is not a file: ${sourceImagePath}`);
+
+      sourceMimeType = mimeTypeForFile(sourceImagePath);
+      if (!isAllowedExternalFusionPatchImageMimeType(sourceMimeType)) {
+        throw new Error("imagePath must be a PNG, JPEG, or WebP image file.");
+      }
+
+      const loaded = await loadCanvasSnapshot(args);
+      cowartUrl = loaded.cowartUrl;
+      snapshot = loaded.snapshot;
+    }
+
+    const canvasDir = resolveCanvasDir(args);
+    const plannedResults = await Promise.all(
+      htmlArtboards.map(async (artboard) => {
+        const shapeRecord = snapshot?.store?.[artboard.shapeId];
+        const planArtboard =
+          shapeRecord?.meta?.cowartHtmlArtboard === true
+            ? {
+                ...artboard,
+                runtimeDocument: shapeRecord.meta.runtimeDocument,
+              }
+            : artboard;
+        let asset = null;
+        let targetFilePath = null;
+
+        if (shapeRecord?.meta?.cowartHtmlArtboard === true && sourceImagePath && sourceStat) {
+          const pageId = findPageIdForShape(snapshot.store, artboard.shapeId);
+          if (pageId) {
+            const assetsDir = join(canvasDir, "pages", pageDirName(pageId), "assets");
+            if (!isSafeChildPath(canvasDir, assetsDir)) {
+              throw new Error(`Unsafe page assets directory: ${assetsDir}`);
+            }
+            const requestedFileName = args.fileName || basename(sourceImagePath);
+            const { fileName, filePath } = await uniqueFilePath(assetsDir, requestedFileName);
+            targetFilePath = filePath;
+            asset = createExternalFusionPatchAssetDescriptor({
+              fileName,
+              pageId,
+              patchId,
+              sourceStat,
+              mimeType: sourceMimeType,
+            });
+          }
+        }
+
+        let plan = createHtmlArtboardFusionPatchImageAttachPlan(planArtboard, args, { asset });
+
+        if (!shapeRecord) {
+          plan = {
+            ...plan,
+            canApply: false,
+            reason: `Missing shape record in canvas snapshot: ${artboard.shapeId}`,
+          };
+        } else if (shapeRecord.meta?.cowartHtmlArtboard !== true) {
+          plan = {
+            ...plan,
+            canApply: false,
+            reason: `Selected shape is not an HTML Artboard in canvas snapshot: ${artboard.shapeId}`,
+          };
+        } else if (!asset || !targetFilePath) {
+          plan = {
+            ...plan,
+            canApply: false,
+            reason: `Could not determine page-local asset path for ${artboard.shapeId}`,
+          };
+        }
+
+        return {
+          ...plan,
+          applied: false,
+          assetCopy: targetFilePath
+            ? {
+                sourceImagePath,
+                targetFilePath,
+              }
+            : null,
+        };
+      })
+    );
+
+    const hasPreconditionFailure = plannedResults.some((result) => result.preconditionFailed === true);
+    const overallReason = hasPreconditionFailure ? "One or more precondition checks failed" : null;
+    const applyResults =
+      confirmApply && hasPreconditionFailure
+        ? plannedResults.map((result) =>
+            result.preconditionFailed === true
+              ? result
+              : {
+                  ...result,
+                  canApply: false,
+                  reason: overallReason,
+                }
+          )
+        : await Promise.all(
+            plannedResults.map(async (result) => {
+              if (!confirmApply || result.canApply !== true) {
+                return result;
+              }
+
+              const shapeRecord = snapshot?.store?.[result.shapeId];
+              if (!shapeRecord) {
+                return {
+                  ...result,
+                  canApply: false,
+                  reason: `Missing shape record in canvas snapshot: ${result.shapeId}`,
+                };
+              }
+
+              if (!result.assetCopy?.targetFilePath || !result.assetCopy?.sourceImagePath) {
+                return {
+                  ...result,
+                  canApply: false,
+                  reason: `Missing external image copy target for ${result.shapeId}`,
+                };
+              }
+
+              await mkdir(dirname(result.assetCopy.targetFilePath), { recursive: true });
+              await copyFile(result.assetCopy.sourceImagePath, result.assetCopy.targetFilePath);
+              snapshot.store[result.shapeId] =
+                applyHtmlArtboardFusionPatchImageAttachDocumentToShapeRecord(
+                  shapeRecord,
+                  result.proposedDocument
+                );
+              appliedCount += 1;
+
+              return {
+                ...result,
+                applied: true,
+                reason: "Applied",
+              };
+            })
+          );
+
+    const results = applyResults.map((result) => {
+      const { assetCopy: _assetCopy, ...publicResult } = result;
+      if (!includeProposedDocument) {
+        const { proposedDocument: _proposedDocument, ...compactResult } = publicResult;
+        return compactResult;
+      }
+
+      return publicResult;
+    });
+
+    if (confirmApply && !hasPreconditionFailure && appliedCount > 0) {
+      await saveCanvasSnapshot(cowartUrl, snapshot);
+      saved = true;
+    }
+
+    const summary =
+      results.length === 0
+        ? "No selected HTML Artboard."
+        : results.map((result) => summarizeHtmlArtboardFusionPatchImageAttachResult(result)).join("\n");
 
     sendResult(id, {
       content: [{ type: "text", text: summary }],

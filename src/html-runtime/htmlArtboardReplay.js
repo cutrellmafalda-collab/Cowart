@@ -12,6 +12,7 @@ const REPLAY_MUTATION_TYPES = new Set([
   'fusion_patch_region_update',
   'fusion_patch_rename',
   'fusion_patch_mock_asset_generate',
+  'fusion_patch_external_asset_attach',
   'document_meta_update'
 ])
 
@@ -190,6 +191,19 @@ export function applyHtmlArtboardMutation(document, mutation, options = {}) {
         patchAssetUrl: payload.patchAssetUrl,
         status: 'mock-generated',
         provider: 'mock'
+      })
+    }
+  }
+
+  if (mutationType === 'fusion_patch_external_asset_attach' && typeof payload.patchId === 'string') {
+    if (isRecord(payload.nextPatch)) {
+      nextDocument = replaceFusionPatch(nextDocument, payload.patchId, payload.nextPatch)
+    } else {
+      nextDocument = updateFusionPatch(nextDocument, payload.patchId, {
+        patchAssetId: payload.patchAssetId,
+        patchAssetUrl: payload.patchAssetUrl,
+        status: 'generated',
+        provider: typeof payload.provider === 'string' ? payload.provider : 'external-image-gen'
       })
     }
   }
