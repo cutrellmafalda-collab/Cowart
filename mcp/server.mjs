@@ -643,7 +643,7 @@ function toolDefinitions() {
       name: TOOL_APPLY_HTML_ARTBOARD_EDIT,
       title: "Apply Cowart HTML Artboard Edit",
       description:
-        "Apply an explicit deterministic edit proposal to the currently selected Cowart HTML Artboard. Requires confirmApply=true.",
+        "Apply an explicit deterministic edit proposal to the currently selected Cowart HTML Artboard. Requires confirmApply=true. Optional expected* fields act as optimistic safety guards; if the current selected runtimeDocument does not match, the tool refuses to save.",
       inputSchema: {
         type: "object",
         properties: {
@@ -694,6 +694,25 @@ function toolDefinitions() {
           confirmApply: {
             type: "boolean",
             description: "Must be true to write the proposed document back to the selected HTML Artboard.",
+          },
+          expectedDocumentId: {
+            type: "string",
+            description: "Optional optimistic guard. If provided, it must match the current runtimeDocument id.",
+          },
+          expectedRenderFingerprint: {
+            type: "string",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument renderFingerprint.",
+          },
+          expectedMutationCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument mutationLog length.",
+          },
+          expectedFusionPatchCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument fusionPatches length.",
           },
         },
         additionalProperties: false,
@@ -835,7 +854,7 @@ async function handleToolCall(id, params) {
       snapshot = loaded.snapshot;
     }
 
-    const results = htmlArtboards.map((artboard) => {
+    const plannedResults = htmlArtboards.map((artboard) => {
       const shapeRecord = snapshot?.store?.[artboard.shapeId];
       const planArtboard =
         shapeRecord?.meta?.cowartHtmlArtboard === true
@@ -860,24 +879,53 @@ async function handleToolCall(id, params) {
         };
       }
 
-      let result = {
+      return {
         ...plan,
         applied: false,
       };
+    });
 
-      if (confirmApply && plan.canApply === true) {
-        snapshot.store[artboard.shapeId] = applyHtmlArtboardDocumentToShapeRecord(
-          shapeRecord,
-          plan.proposedDocument
-        );
-        appliedCount += 1;
-        result = {
-          ...result,
-          applied: true,
-          reason: "Applied",
-        };
-      }
+    const hasPreconditionFailure = plannedResults.some((result) => result.preconditionFailed === true);
+    const overallReason = hasPreconditionFailure ? "One or more precondition checks failed" : null;
+    const applyResults =
+      confirmApply && hasPreconditionFailure
+        ? plannedResults.map((result) =>
+            result.preconditionFailed === true
+              ? result
+              : {
+                  ...result,
+                  canApply: false,
+                  reason: overallReason,
+                }
+          )
+        : plannedResults.map((result) => {
+            if (!confirmApply || result.canApply !== true) {
+              return result;
+            }
 
+            const shapeRecord = snapshot?.store?.[result.shapeId];
+            if (!shapeRecord) {
+              return {
+                ...result,
+                canApply: false,
+                reason: `Missing shape record in canvas snapshot: ${result.shapeId}`,
+              };
+            }
+
+            snapshot.store[result.shapeId] = applyHtmlArtboardDocumentToShapeRecord(
+              shapeRecord,
+              result.proposedDocument
+            );
+            appliedCount += 1;
+
+            return {
+              ...result,
+              applied: true,
+              reason: "Applied",
+            };
+          });
+
+    const results = applyResults.map((result) => {
       if (!includeProposedDocument) {
         const { proposedDocument: _proposedDocument, proposal, ...compactResult } = result;
         const { proposedDocument: _proposalDocument, ...compactProposal } = proposal;
@@ -890,7 +938,7 @@ async function handleToolCall(id, params) {
       return result;
     });
 
-    if (confirmApply && appliedCount > 0) {
+    if (confirmApply && !hasPreconditionFailure && appliedCount > 0) {
       await saveCanvasSnapshot(cowartUrl, snapshot);
       saved = true;
     }
@@ -904,11 +952,13 @@ async function handleToolCall(id, params) {
       content: [{ type: "text", text: summary }],
       structuredContent: {
         selectionFile,
-        dryRun: !confirmApply,
+        dryRun: !confirmApply || hasPreconditionFailure,
         confirmApply,
         count: results.length,
         appliedCount,
         saved,
+        preconditionFailed: hasPreconditionFailure,
+        reason: overallReason,
         results,
       },
     });

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   applyHtmlArtboardDocumentToShapeRecord,
+  createHtmlArtboardApplyPreconditions,
   createHtmlArtboardApplyPlan,
   summarizeHtmlArtboardApplyResult,
+  validateHtmlArtboardApplyPreconditions,
 } from "../mcp/htmlArtboardApplyEdit.mjs";
 
 function test(name, run) {
@@ -78,6 +80,106 @@ function createHtmlArtboardShape(overrides = {}) {
   };
 }
 
+test("createHtmlArtboardApplyPreconditions returns documentId", () => {
+  const preconditions = createHtmlArtboardApplyPreconditions(createRuntimeDocument());
+
+  assert.equal(preconditions.documentId, "html-artboard:apply-test");
+});
+
+test("createHtmlArtboardApplyPreconditions returns renderFingerprint", () => {
+  const preconditions = createHtmlArtboardApplyPreconditions(createRuntimeDocument());
+
+  assert.equal(preconditions.renderFingerprint, "cowart-source-v1:original");
+});
+
+test("createHtmlArtboardApplyPreconditions returns mutationCount", () => {
+  const preconditions = createHtmlArtboardApplyPreconditions(
+    createRuntimeDocument({
+      mutationLog: [{ id: "mutation-1" }, { id: "mutation-2" }],
+    })
+  );
+
+  assert.equal(preconditions.mutationCount, 2);
+});
+
+test("createHtmlArtboardApplyPreconditions returns fusionPatchCount", () => {
+  const preconditions = createHtmlArtboardApplyPreconditions(
+    createRuntimeDocument({
+      fusionPatches: [
+        { id: "patch-1", type: "fusion-patch" },
+        { id: "patch-2", type: "fusion-patch" },
+      ],
+    })
+  );
+
+  assert.equal(preconditions.fusionPatchCount, 2);
+});
+
+test("validate preconditions passes when expected values match", () => {
+  const document = createRuntimeDocument({
+    mutationLog: [{ id: "mutation-1" }],
+    fusionPatches: [{ id: "patch-1", type: "fusion-patch" }],
+  });
+  const expected = createHtmlArtboardApplyPreconditions(document);
+  const check = validateHtmlArtboardApplyPreconditions(document, {
+    expectedDocumentId: expected.documentId,
+    expectedRenderFingerprint: expected.renderFingerprint,
+    expectedMutationCount: expected.mutationCount,
+    expectedFusionPatchCount: expected.fusionPatchCount,
+  });
+
+  assert.equal(check.ok, true);
+  assert.equal(check.failed, false);
+});
+
+test("validate preconditions ignores missing expected fields", () => {
+  const check = validateHtmlArtboardApplyPreconditions(createRuntimeDocument(), {});
+
+  assert.equal(check.ok, true);
+  assert.equal(check.failed, false);
+  assert.deepEqual(check.expected, {});
+});
+
+test("validate preconditions fails when expectedRenderFingerprint mismatches", () => {
+  const check = validateHtmlArtboardApplyPreconditions(createRuntimeDocument(), {
+    expectedRenderFingerprint: "stale-fingerprint",
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(check.failed, true);
+  assert.equal(check.reasons.some((reason) => reason.includes("expectedRenderFingerprint")), true);
+});
+
+test("validate preconditions fails when expectedMutationCount mismatches", () => {
+  const check = validateHtmlArtboardApplyPreconditions(createRuntimeDocument(), {
+    expectedMutationCount: 99,
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(check.failed, true);
+  assert.equal(check.reasons.some((reason) => reason.includes("expectedMutationCount")), true);
+});
+
+test("validate preconditions fails when expectedDocumentId mismatches", () => {
+  const check = validateHtmlArtboardApplyPreconditions(createRuntimeDocument(), {
+    expectedDocumentId: "html-artboard:stale",
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(check.failed, true);
+  assert.equal(check.reasons.some((reason) => reason.includes("expectedDocumentId")), true);
+});
+
+test("validate preconditions fails when expectedFusionPatchCount mismatches", () => {
+  const check = validateHtmlArtboardApplyPreconditions(createRuntimeDocument(), {
+    expectedFusionPatchCount: 99,
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(check.failed, true);
+  assert.equal(check.reasons.some((reason) => reason.includes("expectedFusionPatchCount")), true);
+});
+
 test("createHtmlArtboardApplyPlan without confirmApply returns dryRun true", () => {
   const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
     nextHtml: "<section>Next</section>",
@@ -112,6 +214,75 @@ test("createHtmlArtboardApplyPlan with confirmApply true and no changes canApply
 
   assert.equal(plan.canApply, false);
   assert.equal(plan.reason, "No mutations proposed");
+});
+
+test("createHtmlArtboardApplyPlan includes preconditions", () => {
+  const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
+    nextHtml: "<section>Next</section>",
+  });
+
+  assert.equal(plan.preconditions.documentId, "html-artboard:apply-test");
+  assert.equal(plan.preconditionCheck.ok, true);
+  assert.equal(plan.preconditionFailed, false);
+});
+
+test("createHtmlArtboardApplyPlan blocks apply when precondition fails", () => {
+  const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
+    confirmApply: true,
+    nextHtml: "<section>Blocked</section>",
+    expectedRenderFingerprint: "stale-fingerprint",
+  });
+
+  assert.equal(plan.preconditionFailed, true);
+  assert.equal(plan.canApply, false);
+  assert.equal(plan.dryRun, true);
+});
+
+test("blocked apply plan has canApply false", () => {
+  const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
+    confirmApply: true,
+    nextCss: "section { color: red; }",
+    expectedMutationCount: 1,
+  });
+
+  assert.equal(plan.canApply, false);
+});
+
+test("blocked apply plan reason mentions precondition", () => {
+  const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
+    confirmApply: true,
+    nextCss: "section { color: red; }",
+    expectedDocumentId: "html-artboard:stale",
+  });
+
+  assert.equal(plan.reason.includes("Precondition"), true);
+});
+
+test("apply plan still dry-runs when confirmApply false", () => {
+  const expected = createHtmlArtboardApplyPreconditions(createRuntimeDocument());
+  const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
+    nextHtml: "<section>Dry run</section>",
+    expectedRenderFingerprint: expected.renderFingerprint,
+  });
+
+  assert.equal(plan.dryRun, true);
+  assert.equal(plan.canApply, false);
+  assert.equal(plan.reason, "confirmApply is required to write changes");
+});
+
+test("apply plan canApply true when confirmApply true and preconditions match", () => {
+  const expected = createHtmlArtboardApplyPreconditions(createRuntimeDocument());
+  const plan = createHtmlArtboardApplyPlan(createHtmlArtboard(), {
+    confirmApply: true,
+    nextCss: "section { color: green; }",
+    expectedDocumentId: expected.documentId,
+    expectedRenderFingerprint: expected.renderFingerprint,
+    expectedMutationCount: expected.mutationCount,
+    expectedFusionPatchCount: expected.fusionPatchCount,
+  });
+
+  assert.equal(plan.canApply, true);
+  assert.equal(plan.preconditionFailed, false);
 });
 
 test("applyHtmlArtboardDocumentToShapeRecord updates runtimeDocument", () => {

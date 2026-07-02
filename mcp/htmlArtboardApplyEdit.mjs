@@ -1,4 +1,5 @@
 import { ensureHtmlArtboardDocument } from "../src/html-runtime/htmlCanvasDocument.js";
+import { createRenderFingerprint } from "../src/html-runtime/renderFingerprint.js";
 import { createHtmlArtboardEditProposal } from "./htmlArtboardEditProposal.mjs";
 
 function isRecord(value) {
@@ -21,15 +22,81 @@ function mutationCount(result) {
   return Array.isArray(result?.proposedMutations) ? result.proposedMutations.length : 0;
 }
 
+export function createHtmlArtboardApplyPreconditions(runtimeDocument) {
+  const sourceDocument = isRecord(runtimeDocument) ? runtimeDocument : {};
+  const document = ensureHtmlArtboardDocument(sourceDocument);
+
+  return {
+    documentId: document.id,
+    renderFingerprint:
+      typeof sourceDocument.renderFingerprint === "string"
+        ? sourceDocument.renderFingerprint
+        : createRenderFingerprint(document),
+    mutationCount: Array.isArray(document.mutationLog) ? document.mutationLog.length : 0,
+    fusionPatchCount: Array.isArray(document.fusionPatches) ? document.fusionPatches.length : 0,
+  };
+}
+
+export function validateHtmlArtboardApplyPreconditions(runtimeDocument, request = {}) {
+  const sourceRequest = isRecord(request) ? request : {};
+  const actual = createHtmlArtboardApplyPreconditions(runtimeDocument);
+  const expected = {};
+  const reasons = [];
+
+  if (typeof sourceRequest.expectedDocumentId === "string") {
+    expected.documentId = sourceRequest.expectedDocumentId;
+    if (expected.documentId !== actual.documentId) {
+      reasons.push("expectedDocumentId does not match current documentId");
+    }
+  }
+
+  if (typeof sourceRequest.expectedRenderFingerprint === "string") {
+    expected.renderFingerprint = sourceRequest.expectedRenderFingerprint;
+    if (expected.renderFingerprint !== actual.renderFingerprint) {
+      reasons.push("expectedRenderFingerprint does not match current renderFingerprint");
+    }
+  }
+
+  if (Number.isFinite(sourceRequest.expectedMutationCount)) {
+    expected.mutationCount = sourceRequest.expectedMutationCount;
+    if (expected.mutationCount !== actual.mutationCount) {
+      reasons.push("expectedMutationCount does not match current mutationCount");
+    }
+  }
+
+  if (Number.isFinite(sourceRequest.expectedFusionPatchCount)) {
+    expected.fusionPatchCount = sourceRequest.expectedFusionPatchCount;
+    if (expected.fusionPatchCount !== actual.fusionPatchCount) {
+      reasons.push("expectedFusionPatchCount does not match current fusionPatchCount");
+    }
+  }
+
+  return {
+    ok: reasons.length === 0,
+    failed: reasons.length > 0,
+    expected,
+    actual,
+    reasons,
+  };
+}
+
 export function createHtmlArtboardApplyPlan(htmlArtboard, request = {}) {
   const sourceRequest = isRecord(request) ? request : {};
   const confirmApply = sourceRequest.confirmApply === true;
   const proposal = createHtmlArtboardEditProposal(htmlArtboard, sourceRequest);
+  const preconditions = createHtmlArtboardApplyPreconditions(htmlArtboard?.runtimeDocument);
+  const preconditionCheck = validateHtmlArtboardApplyPreconditions(
+    htmlArtboard?.runtimeDocument,
+    sourceRequest
+  );
+  const preconditionFailed = preconditionCheck.failed === true;
   const proposedMutations = Array.isArray(proposal.proposedMutations) ? proposal.proposedMutations : [];
   let canApply = false;
   let reason = "";
 
-  if (!confirmApply) {
+  if (preconditionFailed) {
+    reason = "Precondition check failed";
+  } else if (!confirmApply) {
     reason = "confirmApply is required to write changes";
   } else if (proposedMutations.length === 0) {
     reason = "No mutations proposed";
@@ -43,11 +110,14 @@ export function createHtmlArtboardApplyPlan(htmlArtboard, request = {}) {
   return {
     shapeId: proposal.shapeId,
     documentId: proposal.documentId,
-    dryRun: !confirmApply,
+    dryRun: !confirmApply || preconditionFailed,
     confirmApply,
     proposal,
     canApply,
     reason,
+    preconditions,
+    preconditionCheck,
+    preconditionFailed,
     proposedDocument: deepClone(proposal.proposedDocument),
     proposedMutations: deepClone(proposedMutations),
     diffSummary: deepClone(proposal.diffSummary),
@@ -77,6 +147,10 @@ export function summarizeHtmlArtboardApplyResult(result) {
 
   if (source.applied === true) {
     return `Applied HTML Artboard edit to ${shapeId}: ${count} mutation${count === 1 ? "" : "s"}.`;
+  }
+
+  if (source.preconditionFailed === true) {
+    return `HTML Artboard edit was not applied to ${shapeId}: Precondition check failed.`;
   }
 
   if (source.confirmApply !== true || source.dryRun === true) {
