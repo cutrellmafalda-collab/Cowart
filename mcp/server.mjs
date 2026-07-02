@@ -7,11 +7,16 @@ import {
   extractSelectedHtmlArtboards,
   summarizeSelectedHtmlArtboards,
 } from "./htmlArtboardSelection.mjs";
+import {
+  createHtmlArtboardEditProposal,
+  summarizeHtmlArtboardEditProposal,
+} from "./htmlArtboardEditProposal.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
 const TOOL_GET_SELECTION = "get_cowart_selection";
 const TOOL_GET_SELECTED_HTML_ARTBOARD = "get_cowart_selected_html_artboard";
+const TOOL_PROPOSE_HTML_ARTBOARD_EDIT = "propose_cowart_html_artboard_edit";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -571,6 +576,64 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_PROPOSE_HTML_ARTBOARD_EDIT,
+      title: "Propose Cowart HTML Artboard Edit",
+      description:
+        "Return a dry-run edit proposal for the currently selected Cowart HTML Artboard without modifying the canvas.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          instruction: {
+            type: "string",
+            description: "Human-readable edit instruction for the dry-run proposal.",
+          },
+          nextHtml: {
+            type: "string",
+            description: "Proposed next HTML source for the selected HTML Artboard.",
+          },
+          nextCss: {
+            type: "string",
+            description: "Proposed next CSS source for the selected HTML Artboard.",
+          },
+          targetSelector: {
+            type: "string",
+            description: "Optional selector for a proposed mock FusionPatch target.",
+          },
+          targetSourceText: {
+            type: "string",
+            description: "Optional source text for a proposed mock FusionPatch target.",
+          },
+          createFusionPatch: {
+            type: "boolean",
+            description: "When true, include a mock fusion_patch_create mutation in the proposal.",
+          },
+          fusionPatchPrompt: {
+            type: "string",
+            description: "Prompt text for the proposed mock FusionPatch placeholder.",
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to true.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -646,6 +709,38 @@ async function handleToolCall(id, params) {
         htmlArtboards: htmlArtboards.map((artboard) =>
           htmlArtboardForMcp(artboard, { includeSource, includeJson })
         ),
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_PROPOSE_HTML_ARTBOARD_EDIT) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument !== false;
+    const proposals = htmlArtboards.map((artboard) => {
+      const proposal = createHtmlArtboardEditProposal(artboard, args);
+
+      if (includeProposedDocument) {
+        return proposal;
+      }
+
+      const { proposedDocument: _proposedDocument, ...compactProposal } = proposal;
+      return compactProposal;
+    });
+    const summary =
+      proposals.length === 0
+        ? "No selected HTML Artboard."
+        : proposals.map((proposal) => summarizeHtmlArtboardEditProposal(proposal)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        count: proposals.length,
+        dryRun: true,
+        proposals,
       },
     });
     return;
