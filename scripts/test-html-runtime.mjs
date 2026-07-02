@@ -57,6 +57,7 @@ import {
   withRenderFingerprint
 } from '../src/html-runtime/renderFingerprint.js'
 import {
+  createHtmlArtboardFusionPatchOverlaySvg,
   createHtmlArtboardThumbnailAltText,
   createHtmlArtboardThumbnailDataUrl,
   createHtmlArtboardThumbnailSvg
@@ -818,6 +819,158 @@ test('thumbnail alt text includes HTML Artboard', () => {
   const altText = createHtmlArtboardThumbnailAltText(createHtmlArtboardDocument())
 
   assert.equal(altText.includes('HTML Artboard'), true)
+})
+
+test('createHtmlArtboardFusionPatchOverlaySvg returns empty string when no patches', () => {
+  const overlay = createHtmlArtboardFusionPatchOverlaySvg(createHtmlArtboardDocument())
+
+  assert.equal(overlay, '')
+})
+
+test('createHtmlArtboardThumbnailSvg includes overlay for visible fusion patch', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        id: 'patch:visible-thumbnail',
+        name: 'Visible Patch',
+        region: { x: 12, y: 24, w: 120, h: 80 }
+      })
+    ]
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes('cowart-html-artboard-fusion-patch-overlays'), true)
+  assert.equal(svg.indexOf('</foreignObject>') < svg.indexOf('Visible Patch'), true)
+})
+
+test('thumbnail svg includes patch label', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Patch Label',
+        region: { x: 20, y: 30, w: 140, h: 90 }
+      })
+    ]
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes('Patch Label'), true)
+})
+
+test('thumbnail svg includes patch region coordinates', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Coordinate Patch',
+        region: { x: 12, y: 24, w: 120, h: 80 }
+      })
+    ]
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes('x="12"'), true)
+  assert.equal(svg.includes('y="24"'), true)
+  assert.equal(svg.includes('width="120"'), true)
+  assert.equal(svg.includes('height="80"'), true)
+})
+
+test('thumbnail svg skips invisible fusion patch', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Hidden Patch',
+        visible: false,
+        region: { x: 10, y: 10, w: 100, h: 60 }
+      })
+    ]
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes('Hidden Patch'), false)
+})
+
+test('thumbnail svg skips patch with invalid region', () => {
+  const svg = createHtmlArtboardThumbnailSvg({
+    fusionPatches: [
+      {
+        id: 'patch:invalid-region',
+        type: 'fusion-patch',
+        name: 'Invalid Region Patch',
+        region: { x: 10, y: 20, w: 0, h: 80 },
+        visible: true
+      }
+    ]
+  })
+
+  assert.equal(svg.includes('Invalid Region Patch'), false)
+})
+
+test('thumbnail svg includes multiple visible patches', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Patch One',
+        region: { x: 20, y: 30, w: 100, h: 70 }
+      }),
+      createFusionPatchPlaceholder({
+        name: 'Patch Two',
+        region: { x: 150, y: 180, w: 140, h: 90 }
+      })
+    ]
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document)
+
+  assert.equal(svg.includes('Patch One'), true)
+  assert.equal(svg.includes('Patch Two'), true)
+})
+
+test('thumbnail svg escapes patch label XML characters', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: `Patch & <bad> "quote" 'single'`,
+        region: { x: 20, y: 30, w: 100, h: 70 }
+      })
+    ]
+  })
+  const overlay = createHtmlArtboardFusionPatchOverlaySvg(document)
+
+  assert.equal(
+    overlay.includes('Patch &amp; &lt;bad&gt; &quot;quote&quot; &apos;single&apos;'),
+    true
+  )
+})
+
+test('createHtmlArtboardFusionPatchOverlaySvg does not mutate input document', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Immutable Overlay Patch',
+        region: { x: 20, y: 30, w: 100, h: 70 }
+      })
+    ]
+  })
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardFusionPatchOverlaySvg(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('thumbnail data url includes encoded overlay', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Encoded Overlay Patch',
+        region: { x: 20, y: 30, w: 100, h: 70 }
+      })
+    ]
+  })
+  const dataUrl = createHtmlArtboardThumbnailDataUrl(document)
+  const decodedSvg = decodeURIComponent(dataUrl.split(',')[1])
+
+  assert.equal(decodedSvg.includes('Encoded Overlay Patch'), true)
+  assert.equal(decodedSvg.includes('cowart-html-artboard-fusion-patch-overlays'), true)
 })
 
 test('createHtmlArtboardPreviewMeta returns cowartHtmlArtboardPreview true', () => {
