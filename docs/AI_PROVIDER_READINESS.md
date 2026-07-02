@@ -331,7 +331,21 @@ Migration steps:
 - SVG `foreignObject` rendering differs by environment.
 - Patch overlay and final export may diverge.
 
-## 15. Recommendation
+## 15. Phase 28 Provider Interface
+
+Phase 28 introduces a provider interface layer for HTML Artboard FusionPatch generation.
+
+- Provider request and result structures exist.
+- The default provider is still `"mock"`.
+- The mock provider adapts the existing deterministic mock FusionPatch asset pipeline.
+- No real AI provider is called.
+- No API keys are read.
+- No network requests are made.
+- Real providers remain future explicit opt-in work.
+
+This phase is a preparation step only. It makes the future provider boundary clearer without changing Cowart's current safety posture.
+
+## 16. Recommendation
 
 Do not connect real AI yet.
 
@@ -356,7 +370,7 @@ Goal:
 - do not call real APIs
 - make future real providers pluggable
 
-## 16. Final Decision
+## 17. Final Decision
 
 - Cowart can now enter AI provider interface design.
 - Cowart should not directly call real AI yet.

@@ -36,6 +36,15 @@ import {
   generateMockFusionPatchAssetsForHtmlArtboard
 } from '../src/html-runtime/htmlArtboardMockFusionPatchAsset.js'
 import {
+  createHtmlArtboardAiProviderRequest,
+  createHtmlArtboardAiProviderResult,
+  createMockHtmlArtboardAiProvider,
+  generateHtmlArtboardFusionPatchAssetWithProvider,
+  getDefaultHtmlArtboardAiProvider,
+  validateHtmlArtboardAiProviderRequest,
+  validateHtmlArtboardAiProviderResult
+} from '../src/html-runtime/htmlArtboardAiProvider.js'
+import {
   createSelectorForDataNode,
   extractHtmlArtboardPatchTargets
 } from '../src/html-runtime/htmlArtboardPatchTargets.js'
@@ -2033,6 +2042,314 @@ test('thumbnail includes generated patch indication', () => {
 
   assert.equal(svg.includes('mock-generated'), true)
   assert.equal(svg.includes('data:image/svg+xml'), true)
+})
+
+test('createHtmlArtboardAiProviderRequest returns kind/version', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-request' })
+  const request = createHtmlArtboardAiProviderRequest(createHtmlArtboardDocument(), patch)
+
+  assert.equal(request.kind, 'html-artboard-ai-provider-request')
+  assert.equal(request.version, 1)
+})
+
+test('createHtmlArtboardAiProviderRequest includes normalized document', () => {
+  const request = createHtmlArtboardAiProviderRequest(
+    { id: 'html-artboard:provider-document' },
+    { id: 'patch:provider-document' }
+  )
+
+  assert.equal(request.document.type, 'cowart-html-artboard')
+  assert.equal(request.document.id, 'html-artboard:provider-document')
+})
+
+test('createHtmlArtboardAiProviderRequest includes normalized patch', () => {
+  const request = createHtmlArtboardAiProviderRequest(createHtmlArtboardDocument(), {
+    id: 'patch:provider-normalized',
+    type: 'ai-fusion-placeholder',
+    prompt: 'Normalize patch'
+  })
+
+  assert.equal(request.patch.type, 'fusion-patch')
+  assert.equal(request.patch.id, 'patch:provider-normalized')
+})
+
+test('createHtmlArtboardAiProviderRequest target includes selector/sourceText/region', () => {
+  const patch = createFusionPatchPlaceholder({
+    selector: '[data-node="headline"]',
+    sourceText: 'Headline',
+    region: { x: 10, y: 20, w: 120, h: 80 }
+  })
+  const request = createHtmlArtboardAiProviderRequest(createHtmlArtboardDocument(), patch)
+
+  assert.equal(request.target.selector, '[data-node="headline"]')
+  assert.equal(request.target.sourceText, 'Headline')
+  assert.deepEqual(request.target.region, { x: 10, y: 20, w: 120, h: 80 })
+})
+
+test('createHtmlArtboardAiProviderRequest constraints preserve text editability', () => {
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+
+  assert.equal(request.constraints.preserveTextEditability, true)
+})
+
+test('createHtmlArtboardAiProviderRequest constraints doNotModifyHtml true', () => {
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+
+  assert.equal(request.constraints.doNotModifyHtml, true)
+})
+
+test('createHtmlArtboardAiProviderRequest constraints doNotModifyCss true', () => {
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+
+  assert.equal(request.constraints.doNotModifyCss, true)
+})
+
+test('createHtmlArtboardAiProviderRequest providerOptions provider defaults mock', () => {
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+
+  assert.equal(request.providerOptions.provider, 'mock')
+})
+
+test('createHtmlArtboardAiProviderRequest does not mutate input', () => {
+  const document = createHtmlArtboardDocument()
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-immutable' })
+  const before = JSON.stringify({ document, patch })
+
+  createHtmlArtboardAiProviderRequest(document, patch)
+
+  assert.equal(JSON.stringify({ document, patch }), before)
+})
+
+test('validateHtmlArtboardAiProviderRequest accepts valid request', () => {
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+  const result = validateHtmlArtboardAiProviderRequest(request)
+
+  assert.equal(result.ok, true)
+})
+
+test('createHtmlArtboardAiProviderResult returns kind/version', () => {
+  const result = createHtmlArtboardAiProviderResult({ ok: false })
+
+  assert.equal(result.kind, 'html-artboard-ai-provider-result')
+  assert.equal(result.version, 1)
+})
+
+test('validateHtmlArtboardAiProviderResult accepts ok mock result', () => {
+  const result = createHtmlArtboardAiProviderResult({
+    ok: true,
+    provider: 'mock',
+    model: 'mock-fusion-patch-v1',
+    patchAssetId: 'mock-asset:test',
+    patchAssetUrl: 'data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C%2Fsvg%3E',
+    mimeType: 'image/svg+xml'
+  })
+
+  assert.equal(validateHtmlArtboardAiProviderResult(result).ok, true)
+})
+
+test('validateHtmlArtboardAiProviderResult rejects missing required fields when ok true', () => {
+  const result = createHtmlArtboardAiProviderResult({
+    ok: true,
+    provider: 'mock',
+    model: 'mock-fusion-patch-v1'
+  })
+
+  assert.equal(validateHtmlArtboardAiProviderResult(result).ok, false)
+})
+
+test('ok false provider result can omit patchAssetUrl', () => {
+  const result = createHtmlArtboardAiProviderResult({
+    ok: false,
+    provider: 'mock',
+    error: 'No asset created'
+  })
+
+  assert.equal(result.patchAssetUrl, null)
+  assert.equal(validateHtmlArtboardAiProviderResult(result).ok, true)
+})
+
+test('createMockHtmlArtboardAiProvider returns name mock', () => {
+  const provider = createMockHtmlArtboardAiProvider()
+
+  assert.equal(provider.name, 'mock')
+})
+
+test('mock provider generateFusionPatchAsset returns ok true', () => {
+  const provider = createMockHtmlArtboardAiProvider()
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+  const result = provider.generateFusionPatchAsset(request)
+
+  assert.equal(result.ok, true)
+})
+
+test('mock provider result has patchAssetUrl', () => {
+  const provider = createMockHtmlArtboardAiProvider()
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+  const result = provider.generateFusionPatchAsset(request)
+
+  assert.equal(result.patchAssetUrl.startsWith('data:image/svg+xml'), true)
+})
+
+test('mock provider result has patchAssetId', () => {
+  const provider = createMockHtmlArtboardAiProvider()
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+  const result = provider.generateFusionPatchAsset(request)
+
+  assert.equal(typeof result.patchAssetId, 'string')
+})
+
+test('mock provider result has cost 0', () => {
+  const provider = createMockHtmlArtboardAiProvider()
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+  const result = provider.generateFusionPatchAsset(request)
+
+  assert.equal(result.cost, 0)
+})
+
+test('mock provider does not mutate request', () => {
+  const provider = createMockHtmlArtboardAiProvider()
+  const request = createHtmlArtboardAiProviderRequest(
+    createHtmlArtboardDocument(),
+    createFusionPatchPlaceholder()
+  )
+  const before = JSON.stringify(request)
+
+  provider.generateFusionPatchAsset(request)
+
+  assert.equal(JSON.stringify(request), before)
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider updates target patch', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-generate' })
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.fusionPatches[0].id, patch.id)
+  assert.equal(updated.fusionPatches[0].status, 'mock-generated')
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider generated patch has patchAssetUrl', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-url' })
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.fusionPatches[0].patchAssetUrl.startsWith('data:image/svg+xml'), true)
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider generated patch has provider mock', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-name' })
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.fusionPatches[0].provider, 'mock')
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider generated patch has status mock-generated', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-status' })
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.fusionPatches[0].status, 'mock-generated')
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider records provider mutationLog', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-mutation' })
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.mutationLog.at(-1).type, 'fusion_patch_provider_asset_generate')
+  assert.equal(updated.mutationLog.at(-1).payload.provider, 'mock')
+  assert.equal(updated.mutationLog.at(-1).payload.patchId, patch.id)
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider changes renderFingerprint', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-fingerprint' })
+  const document = withRenderFingerprint(createHtmlArtboardDocument({ fusionPatches: [patch] }))
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(document, patch.id)
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider does not mutate input document', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-immutable-doc' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const before = JSON.stringify(document)
+
+  generateHtmlArtboardFusionPatchAssetWithProvider(document, patch.id)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider provider failure marks patch failed', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:provider-failed' })
+  const updated = generateHtmlArtboardFusionPatchAssetWithProvider(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id,
+    {
+      provider: {
+        name: 'mock',
+        generateFusionPatchAsset() {
+          return { ok: false, provider: 'mock', error: 'Provider failed' }
+        }
+      }
+    }
+  )
+
+  assert.equal(updated.fusionPatches[0].status, 'failed')
+  assert.equal(updated.fusionPatches[0].meta.providerError, 'Provider failed')
+})
+
+test('generateHtmlArtboardFusionPatchAssetWithProvider missing patchId throws', () => {
+  assert.throws(() =>
+    generateHtmlArtboardFusionPatchAssetWithProvider(
+      createHtmlArtboardDocument({ fusionPatches: [] }),
+      'patch:missing'
+    )
+  )
+})
+
+test('getDefaultHtmlArtboardAiProvider returns mock provider', () => {
+  const provider = getDefaultHtmlArtboardAiProvider()
+
+  assert.equal(provider.name, 'mock')
 })
 
 test('applyHtmlArtboardMutation applies html_update', () => {
