@@ -69,6 +69,13 @@ import {
   createHtmlArtboardThumbnailAltText,
   createHtmlArtboardThumbnailDataUrl
 } from './html-runtime/htmlArtboardThumbnail.js'
+import {
+  compareHtmlArtboardPreviewFreshness,
+  createHtmlArtboardPreviewMeta,
+  getHtmlArtboardPreviewMeta,
+  isHtmlArtboardPreviewShapeForArtboard,
+  summarizeHtmlArtboardPreviewFreshness
+} from './html-runtime/htmlArtboardPreviewFreshness.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -313,26 +320,25 @@ function createHtmlArtboardPreviewAssetId(shapeId) {
 }
 
 function findHtmlArtboardPreviewShape(editor, sourceShapeId) {
-  return (
-    editor
-      .getCurrentPageShapes()
-      .find(
-        (shape) =>
-          shape?.type === 'image' &&
-          shape.meta?.cowartHtmlArtboardPreview === true &&
-          shape.meta?.sourceHtmlArtboardShapeId === sourceShapeId
-      ) ?? null
-  )
+  const matchingPreviewShapes = editor
+    .getCurrentPageShapes()
+    .filter((shape) => shape?.type === 'image' && isHtmlArtboardPreviewShapeForArtboard(shape, sourceShapeId))
+
+  if (matchingPreviewShapes.length === 0) return null
+
+  return matchingPreviewShapes.sort((left, right) => {
+    const leftTime = Date.parse(getHtmlArtboardPreviewMeta(left)?.generatedAt ?? '')
+    const rightTime = Date.parse(getHtmlArtboardPreviewMeta(right)?.generatedAt ?? '')
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+  })[0]
 }
 
-function createHtmlArtboardPreviewMeta(selectedShape, runtimeDocument) {
+function createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument) {
   return {
-    cowartHtmlArtboardPreview: true,
     cowartHtmlArtboardPreviewVersion: HTML_ARTBOARD_PREVIEW_VERSION,
-    sourceHtmlArtboardShapeId: selectedShape.id,
-    sourceHtmlArtboardDocumentId: runtimeDocument.id,
-    sourceRenderFingerprint: runtimeDocument.renderFingerprint ?? null,
-    refreshedAt: new Date().toISOString()
+    ...createHtmlArtboardPreviewMeta(runtimeDocument, {
+      sourceHtmlArtboardShapeId: selectedShape.id
+    })
   }
 }
 
@@ -348,7 +354,7 @@ function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument
   const existingPreviewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
   const assetId =
     existingPreviewShape?.props?.assetId ?? createHtmlArtboardPreviewAssetId(selectedShape.id)
-  const previewMeta = createHtmlArtboardPreviewMeta(selectedShape, runtimeDocument)
+  const previewMeta = createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument)
   const assetRecord = {
     id: assetId,
     typeName: 'asset',
@@ -870,6 +876,18 @@ function CowartHtmlArtboardPreviewControls() {
 
 function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, selectedShape }) {
   const [previewStatus, setPreviewStatus] = useState('')
+  const previewShape = useValue(
+    'selected html artboard canvas preview shape',
+    () => findHtmlArtboardPreviewShape(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const freshness = compareHtmlArtboardPreviewFreshness(runtimeDocument, previewShape)
+  const freshnessSummary = summarizeHtmlArtboardPreviewFreshness(freshness)
+  const freshnessNote = freshness.isMissing
+    ? 'Create a canvas preview thumbnail.'
+    : freshness.isStale
+      ? 'Refresh Canvas Preview to update the canvas thumbnail.'
+      : ''
 
   useEffect(() => {
     setPreviewStatus('')
@@ -888,6 +906,14 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
     <section className="cowart-html-canvas-preview" aria-label="HTML Artboard canvas preview">
       <div className="cowart-html-preview-heading">
         <span>Canvas Preview</span>
+      </div>
+      <div
+        className={`cowart-html-preview-status cowart-html-preview-status-${freshness.status}`}
+      >
+        <span>{freshnessSummary}</span>
+        {freshnessNote ? (
+          <span className="cowart-html-preview-status-note">{freshnessNote}</span>
+        ) : null}
       </div>
       <div className="cowart-html-canvas-preview-action">
         <button

@@ -240,6 +240,44 @@ body {
   line-height: 1;
 }
 
+.cowart-html-preview-status {
+  display: grid;
+  gap: 4px;
+  padding: 7px 8px;
+  color: var(--tl-color-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  background: var(--tl-color-muted-2);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-preview-status-current {
+  color: #166534;
+  background: #ecfdf3;
+  border-color: #bbf7d0;
+}
+
+.cowart-html-preview-status-stale {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.cowart-html-preview-status-missing {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.cowart-html-preview-status-note {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.78;
+}
+
 .cowart-html-artboard-source {
   display: flex;
   flex-direction: column;

@@ -61,6 +61,13 @@ import {
   createHtmlArtboardThumbnailDataUrl,
   createHtmlArtboardThumbnailSvg
 } from '../src/html-runtime/htmlArtboardThumbnail.js'
+import {
+  compareHtmlArtboardPreviewFreshness,
+  createHtmlArtboardPreviewMeta,
+  getHtmlArtboardPreviewMeta,
+  isHtmlArtboardPreviewShapeForArtboard,
+  summarizeHtmlArtboardPreviewFreshness
+} from '../src/html-runtime/htmlArtboardPreviewFreshness.js'
 
 const forbiddenUiFields = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
@@ -811,6 +818,173 @@ test('thumbnail alt text includes HTML Artboard', () => {
   const altText = createHtmlArtboardThumbnailAltText(createHtmlArtboardDocument())
 
   assert.equal(altText.includes('HTML Artboard'), true)
+})
+
+test('createHtmlArtboardPreviewMeta returns cowartHtmlArtboardPreview true', () => {
+  const meta = createHtmlArtboardPreviewMeta(createHtmlArtboardDocument())
+
+  assert.equal(meta.cowartHtmlArtboardPreview, true)
+})
+
+test('preview meta includes sourceHtmlArtboardShapeId', () => {
+  const meta = createHtmlArtboardPreviewMeta(createHtmlArtboardDocument(), {
+    sourceHtmlArtboardShapeId: 'shape:html-artboard'
+  })
+
+  assert.equal(meta.sourceHtmlArtboardShapeId, 'shape:html-artboard')
+})
+
+test('preview meta includes sourceDocumentId', () => {
+  const document = createHtmlArtboardDocument({ id: 'html-artboard:freshness-id' })
+  const meta = createHtmlArtboardPreviewMeta(document)
+
+  assert.equal(meta.sourceDocumentId, 'html-artboard:freshness-id')
+})
+
+test('preview meta includes sourceRenderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const meta = createHtmlArtboardPreviewMeta(document)
+
+  assert.equal(meta.sourceRenderFingerprint, document.renderFingerprint)
+})
+
+test('preview meta includes sourceMutationCount', () => {
+  const meta = createHtmlArtboardPreviewMeta(
+    createHtmlArtboardDocument({
+      mutationLog: [{ id: 'mutation:one' }, { id: 'mutation:two' }]
+    })
+  )
+
+  assert.equal(meta.sourceMutationCount, 2)
+})
+
+test('preview meta includes sourceFusionPatchCount', () => {
+  const meta = createHtmlArtboardPreviewMeta(
+    createHtmlArtboardDocument({
+      fusionPatches: [{ id: 'patch:one', type: 'fusion-patch' }]
+    })
+  )
+
+  assert.equal(meta.sourceFusionPatchCount, 1)
+})
+
+test('preview meta does not mutate document', () => {
+  const document = createHtmlArtboardDocument({
+    id: 'html-artboard:freshness-immutable',
+    mutationLog: [{ id: 'mutation:stable' }]
+  })
+  const before = JSON.stringify(document)
+
+  createHtmlArtboardPreviewMeta(document)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('getHtmlArtboardPreviewMeta returns meta for preview shape', () => {
+  const meta = createHtmlArtboardPreviewMeta(createHtmlArtboardDocument())
+  const shape = { type: 'image', meta }
+
+  assert.equal(getHtmlArtboardPreviewMeta(shape), meta)
+})
+
+test('isHtmlArtboardPreviewShapeForArtboard returns true for matching shape', () => {
+  const shape = {
+    type: 'image',
+    meta: createHtmlArtboardPreviewMeta(createHtmlArtboardDocument(), {
+      sourceHtmlArtboardShapeId: 'shape:matching-artboard'
+    })
+  }
+
+  assert.equal(isHtmlArtboardPreviewShapeForArtboard(shape, 'shape:matching-artboard'), true)
+})
+
+test('isHtmlArtboardPreviewShapeForArtboard returns false for normal image shape', () => {
+  const shape = { type: 'image', meta: {} }
+
+  assert.equal(isHtmlArtboardPreviewShapeForArtboard(shape, 'shape:normal'), false)
+})
+
+test('compareHtmlArtboardPreviewFreshness returns missing when no preview', () => {
+  const result = compareHtmlArtboardPreviewFreshness(createHtmlArtboardDocument(), null)
+
+  assert.equal(result.status, 'missing')
+  assert.equal(result.isMissing, true)
+})
+
+test('compareHtmlArtboardPreviewFreshness returns current when meta matches', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const previewShape = {
+    type: 'image',
+    meta: createHtmlArtboardPreviewMeta(document)
+  }
+  const result = compareHtmlArtboardPreviewFreshness(document, previewShape)
+
+  assert.equal(result.status, 'current')
+  assert.equal(result.isCurrent, true)
+})
+
+test('compareHtmlArtboardPreviewFreshness returns stale when fingerprint changes', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const changedDocument = {
+    ...document,
+    html: `${document.html}<p>Changed</p>`,
+    renderFingerprint: createRenderFingerprint({ ...document, html: `${document.html}<p>Changed</p>` })
+  }
+  const previewShape = {
+    type: 'image',
+    meta: createHtmlArtboardPreviewMeta(document)
+  }
+  const result = compareHtmlArtboardPreviewFreshness(changedDocument, previewShape)
+
+  assert.equal(result.status, 'stale')
+  assert.equal(result.isStale, true)
+})
+
+test('compareHtmlArtboardPreviewFreshness returns stale when mutation count changes', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const changedDocument = {
+    ...document,
+    mutationLog: [...document.mutationLog, { id: 'mutation:new' }]
+  }
+  const previewShape = {
+    type: 'image',
+    meta: createHtmlArtboardPreviewMeta(document)
+  }
+  const result = compareHtmlArtboardPreviewFreshness(changedDocument, previewShape)
+
+  assert.equal(result.status, 'stale')
+  assert.equal(result.reasons.includes('mutation count changed'), true)
+})
+
+test('compareHtmlArtboardPreviewFreshness returns stale when fusion patch count changes', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const changedDocument = {
+    ...document,
+    fusionPatches: [{ id: 'patch:new', type: 'fusion-patch' }]
+  }
+  const previewShape = {
+    type: 'image',
+    meta: createHtmlArtboardPreviewMeta(document)
+  }
+  const result = compareHtmlArtboardPreviewFreshness(changedDocument, previewShape)
+
+  assert.equal(result.status, 'stale')
+  assert.equal(result.reasons.includes('fusion patch count changed'), true)
+})
+
+test('summarizeHtmlArtboardPreviewFreshness handles missing/current/stale', () => {
+  assert.equal(
+    summarizeHtmlArtboardPreviewFreshness({ status: 'missing' }),
+    'Missing preview'
+  )
+  assert.equal(
+    summarizeHtmlArtboardPreviewFreshness({ status: 'current' }),
+    'Preview up to date'
+  )
+  assert.equal(
+    summarizeHtmlArtboardPreviewFreshness({ status: 'stale', reasons: ['render fingerprint changed'] }),
+    'Preview stale: render fingerprint changed'
+  )
 })
 
 test('preview srcdoc returns string', () => {
