@@ -34,6 +34,11 @@ import {
   createHtmlArtboardMockFusionPatchAssetPlan,
   summarizeHtmlArtboardMockFusionPatchAssetResult,
 } from "./htmlArtboardMockFusionPatchAssetGeneration.mjs";
+import {
+  applyHtmlArtboardAiGenerationDocumentToShapeRecord,
+  createHtmlArtboardAiGenerationApplyPlan,
+  summarizeHtmlArtboardAiGenerationApplyResult,
+} from "./htmlArtboardAiGenerationApply.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
@@ -47,6 +52,8 @@ const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_APPLY_HTML_ARTBOARD_FUSION_PATCH = "apply_cowart_html_artboard_fusion_patch";
 const TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET =
   "generate_cowart_html_artboard_mock_fusion_patch_asset";
+const TOOL_GENERATE_HTML_ARTBOARD_AI_FUSION_PATCH_ASSET =
+  "generate_cowart_html_artboard_ai_fusion_patch_asset";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -1035,6 +1042,95 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_GENERATE_HTML_ARTBOARD_AI_FUSION_PATCH_ASSET,
+      title: "Generate Cowart HTML Artboard AI FusionPatch Asset",
+      description:
+        "Generate an AI FusionPatch asset for the currently selected Cowart HTML Artboard. Defaults to dry-run and requires confirmGenerate=true plus matching safety guards to call a provider and save.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          cowartUrl: {
+            type: "string",
+            description: "Running Cowart URL, for example http://127.0.0.1:43217.",
+          },
+          patchId: {
+            type: "string",
+            description: "FusionPatch id to generate. Required when multiple patches exist.",
+          },
+          provider: {
+            type: "string",
+            description: "AI provider. Currently only openai is supported.",
+          },
+          model: {
+            type: "string",
+            description: "Provider model. Defaults to gpt-image-2.",
+          },
+          size: {
+            type: "string",
+            description: "Requested image size.",
+          },
+          quality: {
+            type: "string",
+            description: "Requested image quality.",
+          },
+          outputFormat: {
+            type: "string",
+            description: "Requested output format such as png, jpeg, or webp.",
+          },
+          promptOverride: {
+            type: "string",
+            description: "Optional prompt override for this generation request.",
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to false.",
+          },
+          confirmGenerate: {
+            type: "boolean",
+            description: "Must be true to call the AI provider and write generated asset fields.",
+          },
+          dryRun: {
+            type: "boolean",
+            description: "When true, force payload preview only even if confirmGenerate is true.",
+          },
+          expectedDocumentId: {
+            type: "string",
+            description: "Optional optimistic guard. If provided, it must match the current runtimeDocument id.",
+          },
+          expectedRenderFingerprint: {
+            type: "string",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument renderFingerprint.",
+          },
+          expectedMutationCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument mutationLog length.",
+          },
+          expectedFusionPatchCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument fusionPatches length.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -1578,6 +1674,113 @@ async function handleToolCall(id, params) {
         saved,
         preconditionFailed: hasPreconditionFailure,
         reason: overallReason,
+        results,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_GENERATE_HTML_ARTBOARD_AI_FUSION_PATCH_ASSET) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument === true;
+    const confirmGenerate = args.confirmGenerate === true && args.dryRun !== true;
+    let saved = false;
+    let appliedCount = 0;
+    let cowartUrl = null;
+    let snapshot = null;
+
+    if (confirmGenerate && htmlArtboards.length > 0) {
+      const loaded = await loadCanvasSnapshot(args);
+      cowartUrl = loaded.cowartUrl;
+      snapshot = loaded.snapshot;
+    }
+
+    const applyResults = [];
+    for (const artboard of htmlArtboards) {
+      const shapeRecord = confirmGenerate ? snapshot?.store?.[artboard.shapeId] : null;
+      const planArtboard =
+        shapeRecord?.meta?.cowartHtmlArtboard === true
+          ? {
+              ...artboard,
+              runtimeDocument: shapeRecord.meta.runtimeDocument,
+            }
+          : artboard;
+
+      let plan =
+        confirmGenerate && shapeRecord?.meta?.cowartHtmlArtboard !== true
+          ? {
+              shapeId: artboard.shapeId,
+              documentId: artboard.summary?.documentId ?? null,
+              patchId: args.patchId ?? null,
+              dryRun: true,
+              confirmGenerate,
+              canApply: false,
+              reason: shapeRecord
+                ? `Selected shape is not an HTML Artboard in canvas snapshot: ${artboard.shapeId}`
+                : `Missing shape record in canvas snapshot: ${artboard.shapeId}`,
+              proposal: null,
+              providerResult: null,
+              preconditions: null,
+              preconditionCheck: null,
+              preconditionFailed: false,
+              proposedDocument: artboard.runtimeDocument,
+              proposedMutations: [],
+              diffSummary: { mutationCount: 0, notes: ["No AI generation has run."] },
+              replayCheck: { ok: false, checkedMutationCount: 0 },
+            }
+          : await createHtmlArtboardAiGenerationApplyPlan(planArtboard, args);
+
+      if (confirmGenerate && plan.canApply === true) {
+        snapshot.store[plan.shapeId] = applyHtmlArtboardAiGenerationDocumentToShapeRecord(
+          snapshot.store[plan.shapeId],
+          plan.proposedDocument
+        );
+        appliedCount += 1;
+        plan = {
+          ...plan,
+          applied: true,
+          reason: "Applied",
+        };
+      } else {
+        plan = {
+          ...plan,
+          applied: false,
+        };
+      }
+
+      applyResults.push(plan);
+    }
+
+    const results = applyResults.map((result) => {
+      if (!includeProposedDocument) {
+        const { proposedDocument: _proposedDocument, ...compactResult } = result;
+        return compactResult;
+      }
+
+      return result;
+    });
+
+    if (confirmGenerate && appliedCount > 0) {
+      await saveCanvasSnapshot(cowartUrl, snapshot);
+      saved = true;
+    }
+
+    const summary =
+      results.length === 0
+        ? "No selected HTML Artboard."
+        : results.map((result) => summarizeHtmlArtboardAiGenerationApplyResult(result)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        dryRun: !confirmGenerate,
+        confirmGenerate,
+        count: results.length,
+        appliedCount,
+        saved,
         results,
       },
     });
