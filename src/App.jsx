@@ -1458,6 +1458,7 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
           </>
         )}
       </section>
+      <CowartHtmlArtboardAiGenerationStatus />
       {fusionPatches.length === 0 ? (
         <p className="cowart-html-fusion-empty">No fusion patches yet.</p>
       ) : (
@@ -1486,6 +1487,24 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
       )}
       <button className="cowart-html-fusion-add" onClick={addMockFusionPatch} type="button">
         Add Mock Fusion Patch
+      </button>
+    </section>
+  )
+}
+
+function CowartHtmlArtboardAiGenerationStatus() {
+  return (
+    <section className="cowart-html-ai-generation-status" aria-label="HTML Artboard AI generation status">
+      <div className="cowart-html-preview-heading">
+        <span>AI Generation</span>
+      </div>
+      <div className="cowart-html-ai-generation-status-list">
+        <span>Mock provider available</span>
+        <span>Real provider requires MCP/server-side configuration</span>
+        <span>No browser-side API key</span>
+      </div>
+      <button className="cowart-html-ai-generation-button" disabled type="button">
+        Generate AI Patch
       </button>
     </section>
   )
