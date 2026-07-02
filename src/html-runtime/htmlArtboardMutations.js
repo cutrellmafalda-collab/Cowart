@@ -5,7 +5,12 @@ export const HTML_ARTBOARD_MUTATION_TYPES = [
   'html_update',
   'css_update',
   'document_meta_update',
-  'fusion_patch_create'
+  'fusion_patch_create',
+  'fusion_patch_update',
+  'fusion_patch_delete',
+  'fusion_patch_visibility_update',
+  'fusion_patch_region_update',
+  'fusion_patch_rename'
 ]
 
 function isRecord(value) {

@@ -22,6 +22,13 @@ import {
   isCowartHtmlArtboardShape
 } from '../src/html-runtime/cowartHtmlBridge.js'
 import { updateHtmlArtboardSource } from '../src/html-runtime/htmlArtboardEditing.js'
+import {
+  deleteFusionPatchFromHtmlArtboard,
+  renameFusionPatchInHtmlArtboard,
+  setFusionPatchVisibilityInHtmlArtboard,
+  updateFusionPatchInHtmlArtboard,
+  updateFusionPatchRegionInHtmlArtboard
+} from '../src/html-runtime/htmlArtboardFusionPatchEditing.js'
 import { addFusionPatchPlaceholderToHtmlArtboard } from '../src/html-runtime/htmlArtboardFusionPatches.js'
 import {
   createSelectorForDataNode,
@@ -1782,6 +1789,144 @@ test('adding targeted patch recalculates renderFingerprint', () => {
 
   assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
   assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('updateFusionPatchInHtmlArtboard updates patch prompt', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:update-prompt', prompt: 'Before' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = updateFusionPatchInHtmlArtboard(document, patch.id, { prompt: 'After' })
+
+  assert.equal(updated.fusionPatches[0].prompt, 'After')
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_update')
+})
+
+test('renameFusionPatchInHtmlArtboard renames patch', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:rename', name: 'Before' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = renameFusionPatchInHtmlArtboard(document, patch.id, 'After')
+
+  assert.equal(updated.fusionPatches[0].name, 'After')
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_rename')
+  assert.equal(updated.mutationLog[0].payload.previousName, 'Before')
+  assert.equal(updated.mutationLog[0].payload.nextName, 'After')
+})
+
+test('updateFusionPatchRegionInHtmlArtboard updates patch region', () => {
+  const patch = createFusionPatchPlaceholder({
+    id: 'patch:region',
+    region: { x: 1, y: 2, w: 3, h: 4 }
+  })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = updateFusionPatchRegionInHtmlArtboard(document, patch.id, {
+    x: 10,
+    y: 20,
+    w: 120,
+    h: 80
+  })
+
+  assert.deepEqual(updated.fusionPatches[0].region, { x: 10, y: 20, w: 120, h: 80 })
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_region_update')
+})
+
+test('setFusionPatchVisibilityInHtmlArtboard hides patch', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:hide', visible: true })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = setFusionPatchVisibilityInHtmlArtboard(document, patch.id, false)
+
+  assert.equal(updated.fusionPatches[0].visible, false)
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_visibility_update')
+  assert.equal(updated.mutationLog[0].payload.nextVisible, false)
+})
+
+test('setFusionPatchVisibilityInHtmlArtboard shows patch', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:show', visible: false })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = setFusionPatchVisibilityInHtmlArtboard(document, patch.id, true)
+
+  assert.equal(updated.fusionPatches[0].visible, true)
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_visibility_update')
+  assert.equal(updated.mutationLog[0].payload.nextVisible, true)
+})
+
+test('deleteFusionPatchFromHtmlArtboard deletes patch', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:delete' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = deleteFusionPatchFromHtmlArtboard(document, patch.id)
+
+  assert.equal(updated.fusionPatches.length, 0)
+  assert.equal(updated.mutationLog[0].type, 'fusion_patch_delete')
+  assert.equal(updated.mutationLog[0].payload.patchId, patch.id)
+})
+
+test('fusion patch editing helpers support recordMutationLog false', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:no-log', prompt: 'Before' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = updateFusionPatchInHtmlArtboard(
+    document,
+    patch.id,
+    { prompt: 'After' },
+    { recordMutationLog: false }
+  )
+
+  assert.equal(updated.fusionPatches[0].prompt, 'After')
+  assert.equal(updated.mutationLog.length, 0)
+})
+
+test('fusion patch editing helpers recalculate renderFingerprint', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:fingerprint', prompt: 'Before' })
+  const document = withRenderFingerprint(createHtmlArtboardDocument({ fusionPatches: [patch] }))
+  const updated = updateFusionPatchInHtmlArtboard(document, patch.id, { prompt: 'After' })
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('fusion patch editing helpers do not mutate input document', () => {
+  const patch = createFusionPatchPlaceholder({
+    id: 'patch:not-mutated',
+    prompt: 'Before',
+    region: { x: 1, y: 2, w: 3, h: 4 }
+  })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const before = JSON.stringify(document)
+
+  updateFusionPatchInHtmlArtboard(document, patch.id, {
+    prompt: 'After',
+    region: { x: 10, y: 20, w: 120, h: 80 }
+  })
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('deleteFusionPatchFromHtmlArtboard handles missing patch safely', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:kept' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = deleteFusionPatchFromHtmlArtboard(document, 'patch:missing')
+
+  assert.equal(updated.fusionPatches.length, 1)
+  assert.equal(updated.fusionPatches[0].id, 'patch:kept')
+  assert.equal(updated.mutationLog.length, 0)
+})
+
+test('visible false patch does not affect thumbnail overlay rendering', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'Visible Overlay Patch',
+        visible: true,
+        region: { x: 10, y: 20, w: 120, h: 80 }
+      }),
+      createFusionPatchPlaceholder({
+        name: 'Hidden Overlay Patch',
+        visible: false,
+        region: { x: 30, y: 40, w: 120, h: 80 }
+      })
+    ]
+  })
+  const overlay = createHtmlArtboardFusionPatchOverlaySvg(document)
+
+  assert.equal(overlay.includes('Visible Overlay Patch'), true)
+  assert.equal(overlay.includes('Hidden Overlay Patch'), false)
 })
 
 test('applyHtmlArtboardMutation applies html_update', () => {

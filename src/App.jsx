@@ -52,6 +52,11 @@ import {
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
 import { createHtmlArtboardDocument } from './html-runtime/htmlCanvasDocument.js'
+import {
+  deleteFusionPatchFromHtmlArtboard,
+  setFusionPatchVisibilityInHtmlArtboard,
+  updateFusionPatchInHtmlArtboard
+} from './html-runtime/htmlArtboardFusionPatchEditing.js'
 import { addFusionPatchPlaceholderToHtmlArtboard } from './html-runtime/htmlArtboardFusionPatches.js'
 import { extractHtmlArtboardPatchTargets } from './html-runtime/htmlArtboardPatchTargets.js'
 import {
@@ -1138,6 +1143,204 @@ function formatFusionPatchRegion(region) {
   return `Region: x ${region.x}, y ${region.y}, w ${region.w}, h ${region.h}`
 }
 
+function createFusionPatchRegionDraft(region) {
+  return {
+    x: String(region?.x ?? 0),
+    y: String(region?.y ?? 0),
+    w: String(region?.w ?? 1),
+    h: String(region?.h ?? 1)
+  }
+}
+
+function parseFusionPatchRegionDraft(regionDraft) {
+  const nextRegion = {
+    x: Number(regionDraft.x),
+    y: Number(regionDraft.y),
+    w: Number(regionDraft.w),
+    h: Number(regionDraft.h)
+  }
+
+  if (
+    [regionDraft.x, regionDraft.y, regionDraft.w, regionDraft.h].some(
+      (value) => String(value).trim() === ''
+    )
+  ) {
+    return null
+  }
+
+  if (![nextRegion.x, nextRegion.y, nextRegion.w, nextRegion.h].every(Number.isFinite)) {
+    return null
+  }
+
+  if (nextRegion.w <= 0 || nextRegion.h <= 0) return null
+
+  return nextRegion
+}
+
+function writeHtmlArtboardRuntimeDocument(editor, selectedShape, runtimeDocument, historyLabel) {
+  editor.markHistoryStoppingPoint(historyLabel)
+  editor.updateShapes([
+    {
+      id: selectedShape.id,
+      type: selectedShape.type,
+      meta: {
+        ...selectedShape.meta,
+        cowartHtmlArtboard: true,
+        runtimeDocument
+      }
+    }
+  ])
+}
+
+function hasRuntimeDocumentChange(previousDocument, nextDocument) {
+  return (
+    previousDocument.renderFingerprint !== nextDocument.renderFingerprint ||
+    previousDocument.mutationLog.length !== nextDocument.mutationLog.length ||
+    previousDocument.fusionPatches.length !== nextDocument.fusionPatches.length
+  )
+}
+
+function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, patch }) {
+  const [draftName, setDraftName] = useState(patch.name ?? '')
+  const [draftPrompt, setDraftPrompt] = useState(patch.prompt ?? '')
+  const [draftRegion, setDraftRegion] = useState(createFusionPatchRegionDraft(patch.region))
+  const [patchStatus, setPatchStatus] = useState('')
+  const visible = patch.visible !== false
+
+  useEffect(() => {
+    setDraftName(patch.name ?? '')
+    setDraftPrompt(patch.prompt ?? '')
+    setDraftRegion(createFusionPatchRegionDraft(patch.region))
+    setPatchStatus('')
+  }, [
+    patch.id,
+    patch.name,
+    patch.prompt,
+    patch.region?.x,
+    patch.region?.y,
+    patch.region?.w,
+    patch.region?.h
+  ])
+
+  function updatePatchDocument(updatedDocument, historyLabel, successMessage) {
+    if (!hasRuntimeDocumentChange(runtimeDocument, updatedDocument)) {
+      setPatchStatus('No patch changes')
+      return
+    }
+
+    writeHtmlArtboardRuntimeDocument(editor, selectedShape, updatedDocument, historyLabel)
+    setPatchStatus(successMessage)
+  }
+
+  function applyPatchChanges() {
+    const nextRegion = parseFusionPatchRegionDraft(draftRegion)
+    if (!nextRegion) {
+      setPatchStatus('Invalid region')
+      return
+    }
+
+    const updatedDocument = updateFusionPatchInHtmlArtboard(runtimeDocument, patch.id, {
+      name: draftName,
+      prompt: draftPrompt,
+      region: nextRegion
+    })
+    updatePatchDocument(updatedDocument, 'update-html-artboard-fusion-patch', 'Patch updated')
+  }
+
+  function togglePatchVisibility() {
+    const updatedDocument = setFusionPatchVisibilityInHtmlArtboard(
+      runtimeDocument,
+      patch.id,
+      !visible
+    )
+    updatePatchDocument(
+      updatedDocument,
+      'toggle-html-artboard-fusion-patch-visibility',
+      visible ? 'Patch hidden' : 'Patch shown'
+    )
+  }
+
+  function deletePatch() {
+    const updatedDocument = deleteFusionPatchFromHtmlArtboard(runtimeDocument, patch.id)
+    updatePatchDocument(updatedDocument, 'delete-html-artboard-fusion-patch', 'Patch deleted')
+  }
+
+  function updateRegionDraft(field, value) {
+    setDraftRegion((region) => ({
+      ...region,
+      [field]: value
+    }))
+  }
+
+  return (
+    <li className="cowart-html-fusion-item">
+      <div className="cowart-html-fusion-meta">
+        <span>{patch.name}</span>
+        <span>
+          {patch.status} 路 {patch.provider} 路 {visible ? 'Visible' : 'Hidden'}
+        </span>
+      </div>
+      {patch.selector ? <code>{patch.selector}</code> : null}
+      {patch.sourceText ? <code>Source: {patch.sourceText}</code> : null}
+      <code>{formatFusionPatchRegion(patch.region)}</code>
+      <label className="cowart-html-fusion-field">
+        <span>Name</span>
+        <input
+          aria-label={`Fusion patch name ${patch.id}`}
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+        />
+      </label>
+      <label className="cowart-html-fusion-field">
+        <span>Prompt</span>
+        <textarea
+          aria-label={`Fusion patch prompt ${patch.id}`}
+          value={draftPrompt}
+          onChange={(event) => setDraftPrompt(event.target.value)}
+        />
+      </label>
+      <div className="cowart-html-fusion-region" aria-label={`Fusion patch region ${patch.id}`}>
+        {['x', 'y', 'w', 'h'].map((field) => (
+          <label key={field}>
+            <span>{field}</span>
+            <input
+              aria-label={`Fusion patch region ${field} ${patch.id}`}
+              min={field === 'w' || field === 'h' ? 1 : undefined}
+              type="number"
+              value={draftRegion[field]}
+              onChange={(event) => updateRegionDraft(field, event.target.value)}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="cowart-html-fusion-actions">
+        <button
+          aria-label={`Apply Fusion Patch Changes ${patch.id}`}
+          type="button"
+          onClick={applyPatchChanges}
+        >
+          Apply Patch Changes
+        </button>
+        <button
+          aria-label={`${visible ? 'Hide' : 'Show'} Fusion Patch ${patch.id}`}
+          type="button"
+          onClick={togglePatchVisibility}
+        >
+          {visible ? 'Hide' : 'Show'}
+        </button>
+        <button
+          aria-label={`Delete Fusion Patch ${patch.id}`}
+          type="button"
+          onClick={deletePatch}
+        >
+          Delete
+        </button>
+        {patchStatus ? <span>{patchStatus}</span> : null}
+      </div>
+    </li>
+  )
+}
+
 function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShape }) {
   const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
     ? runtimeDocument.fusionPatches
@@ -1232,7 +1435,13 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
       ) : (
         <ol className="cowart-html-fusion-list">
           {fusionPatches.map((patch) => (
-            <li key={patch.id} className="cowart-html-fusion-item">
+            <CowartHtmlFusionPatchEditor
+              key={patch.id}
+              editor={editor}
+              runtimeDocument={runtimeDocument}
+              selectedShape={selectedShape}
+              patch={patch}
+            >
               <div className="cowart-html-fusion-meta">
                 <span>{patch.name}</span>
                 <span>
@@ -1243,7 +1452,7 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
               {patch.selector ? <code>{patch.selector}</code> : null}
               {patch.sourceText ? <code>Source: {patch.sourceText}</code> : null}
               <code>{formatFusionPatchRegion(patch.region)}</code>
-            </li>
+            </CowartHtmlFusionPatchEditor>
           ))}
         </ol>
       )}
