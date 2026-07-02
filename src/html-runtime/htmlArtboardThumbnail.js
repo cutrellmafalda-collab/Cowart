@@ -47,6 +47,20 @@ function createFusionPatchOverlayLabel(patch) {
   )
 }
 
+function createGeneratedPatchAssetOverlay(patch, region) {
+  if (typeof patch.patchAssetUrl !== 'string' || patch.patchAssetUrl.length === 0) {
+    return ''
+  }
+
+  const href = escapeAttribute(patch.patchAssetUrl)
+  const badgeY = region.y + 8
+  const textY = region.y + 24
+
+  return `      <image href="${href}" x="${region.x}" y="${region.y}" width="${region.w}" height="${region.h}" preserveAspectRatio="none" opacity="0.82" />
+      <rect x="${region.x + 8}" y="${badgeY}" width="126" height="24" fill="#064e3b" fill-opacity="0.88" rx="6" ry="6" />
+      <text x="${region.x + 16}" y="${textY}" fill="#d1fae5" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="800">mock-generated</text>`
+}
+
 function createThumbnailBaseStyle() {
   return `html,
 body,
@@ -86,8 +100,10 @@ export function createHtmlArtboardFusionPatchOverlaySvg(document, options = {}) 
       const labelY = Math.max(16, region.y - 10)
       const labelBackgroundY = Math.max(0, region.y - 30)
       const labelBackgroundWidth = Math.max(120, Math.min(region.w, 360))
+      const generatedPatchAssetOverlay = createGeneratedPatchAssetOverlay(patch, region)
 
       return `    <g class="cowart-html-artboard-fusion-patch-overlay" opacity="${opacity}">
+${generatedPatchAssetOverlay}
       <rect x="${region.x}" y="${region.y}" width="${region.w}" height="${region.h}" fill="#facc15" fill-opacity="0.12" stroke="#facc15" stroke-width="3" stroke-dasharray="10 8" rx="8" ry="8" />
       <rect x="${region.x}" y="${labelBackgroundY}" width="${labelBackgroundWidth}" height="24" fill="#111827" fill-opacity="0.84" rx="6" ry="6" />
       <text x="${region.x + 8}" y="${labelY}" fill="#fff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">${label}</text>

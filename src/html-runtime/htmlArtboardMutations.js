@@ -10,7 +10,8 @@ export const HTML_ARTBOARD_MUTATION_TYPES = [
   'fusion_patch_delete',
   'fusion_patch_visibility_update',
   'fusion_patch_region_update',
-  'fusion_patch_rename'
+  'fusion_patch_rename',
+  'fusion_patch_mock_asset_generate'
 ]
 
 function isRecord(value) {

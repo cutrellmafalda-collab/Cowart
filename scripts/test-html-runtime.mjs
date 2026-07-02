@@ -31,6 +31,11 @@ import {
 } from '../src/html-runtime/htmlArtboardFusionPatchEditing.js'
 import { addFusionPatchPlaceholderToHtmlArtboard } from '../src/html-runtime/htmlArtboardFusionPatches.js'
 import {
+  createMockFusionPatchAsset,
+  generateMockFusionPatchAssetForHtmlArtboard,
+  generateMockFusionPatchAssetsForHtmlArtboard
+} from '../src/html-runtime/htmlArtboardMockFusionPatchAsset.js'
+import {
   createSelectorForDataNode,
   extractHtmlArtboardPatchTargets
 } from '../src/html-runtime/htmlArtboardPatchTargets.js'
@@ -1929,6 +1934,107 @@ test('visible false patch does not affect thumbnail overlay rendering', () => {
   assert.equal(overlay.includes('Hidden Overlay Patch'), false)
 })
 
+test('createMockFusionPatchAsset returns data URL', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:mock-asset', prompt: 'Generate' })
+  const asset = createMockFusionPatchAsset(patch, createHtmlArtboardDocument())
+
+  assert.equal(asset.patchAssetUrl.startsWith('data:image/svg+xml;charset=utf-8,'), true)
+})
+
+test('generateMockFusionPatchAssetForHtmlArtboard writes patchAssetId and patchAssetUrl', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:asset-fields' })
+  const updated = generateMockFusionPatchAssetForHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(typeof updated.fusionPatches[0].patchAssetId, 'string')
+  assert.equal(updated.fusionPatches[0].patchAssetUrl.startsWith('data:image/svg+xml'), true)
+})
+
+test('generateMockFusionPatchAssetForHtmlArtboard marks patch mock-generated', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:asset-status' })
+  const updated = generateMockFusionPatchAssetForHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.fusionPatches[0].status, 'mock-generated')
+  assert.equal(updated.fusionPatches[0].provider, 'mock')
+})
+
+test('generateMockFusionPatchAssetForHtmlArtboard appends mutationLog', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:asset-mutation' })
+  const updated = generateMockFusionPatchAssetForHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+
+  assert.equal(updated.mutationLog.at(-1).type, 'fusion_patch_mock_asset_generate')
+  assert.equal(updated.mutationLog.at(-1).payload.patchId, patch.id)
+  assert.equal(updated.mutationLog.at(-1).payload.patchAssetId, updated.fusionPatches[0].patchAssetId)
+})
+
+test('generateMockFusionPatchAssetForHtmlArtboard recalculates renderFingerprint', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:asset-fingerprint' })
+  const document = withRenderFingerprint(createHtmlArtboardDocument({ fusionPatches: [patch] }))
+  const updated = generateMockFusionPatchAssetForHtmlArtboard(document, patch.id)
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('generateMockFusionPatchAssetForHtmlArtboard does not mutate input', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:asset-immutable' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const before = JSON.stringify(document)
+
+  generateMockFusionPatchAssetForHtmlArtboard(document, patch.id)
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('generateMockFusionPatchAssetForHtmlArtboard supports recordMutationLog false', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:asset-no-log' })
+  const updated = generateMockFusionPatchAssetForHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id,
+    { recordMutationLog: false }
+  )
+
+  assert.equal(updated.fusionPatches[0].status, 'mock-generated')
+  assert.equal(updated.mutationLog.length, 0)
+})
+
+test('generateMockFusionPatchAssetsForHtmlArtboard generates visible patch assets', () => {
+  const visiblePatch = createFusionPatchPlaceholder({ id: 'patch:asset-visible' })
+  const hiddenPatch = createFusionPatchPlaceholder({
+    id: 'patch:asset-hidden',
+    visible: false
+  })
+  const updated = generateMockFusionPatchAssetsForHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [visiblePatch, hiddenPatch] })
+  )
+
+  assert.equal(updated.fusionPatches[0].status, 'mock-generated')
+  assert.equal(updated.fusionPatches[1].patchAssetUrl, null)
+})
+
+test('thumbnail includes generated patch indication', () => {
+  const patch = createFusionPatchPlaceholder({
+    id: 'patch:asset-thumbnail',
+    region: { x: 10, y: 20, w: 160, h: 90 }
+  })
+  const updated = generateMockFusionPatchAssetForHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id
+  )
+  const svg = createHtmlArtboardThumbnailSvg(updated)
+
+  assert.equal(svg.includes('mock-generated'), true)
+  assert.equal(svg.includes('data:image/svg+xml'), true)
+})
+
 test('applyHtmlArtboardMutation applies html_update', () => {
   const document = createHtmlArtboardDocument({ html: '<section>Before</section>' })
   const updated = applyHtmlArtboardMutation(document, {
@@ -2048,6 +2154,28 @@ test('fusion_patch_create preserves existing fusionPatches', () => {
   assert.equal(updated.fusionPatches.length, 2)
   assert.equal(updated.fusionPatches[0].id, 'patch:existing-replay')
   assert.equal(updated.fusionPatches[1].id, 'patch:new-replay')
+})
+
+test('applyHtmlArtboardMutation applies fusion_patch_mock_asset_generate', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:replay-mock-asset' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const nextPatch = {
+    ...patch,
+    patchAssetId: 'mock-fusion-patch-asset:replay',
+    patchAssetUrl: 'data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C%2Fsvg%3E',
+    status: 'mock-generated',
+    provider: 'mock'
+  }
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'fusion_patch_mock_asset_generate',
+    payload: {
+      patchId: patch.id,
+      nextPatch
+    }
+  })
+
+  assert.equal(updated.fusionPatches[0].patchAssetId, 'mock-fusion-patch-asset:replay')
+  assert.equal(updated.fusionPatches[0].status, 'mock-generated')
 })
 
 test('applyHtmlArtboardMutation applies document_meta_update', () => {

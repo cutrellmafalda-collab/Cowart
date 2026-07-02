@@ -11,6 +11,7 @@ const REPLAY_MUTATION_TYPES = new Set([
   'fusion_patch_visibility_update',
   'fusion_patch_region_update',
   'fusion_patch_rename',
+  'fusion_patch_mock_asset_generate',
   'document_meta_update'
 ])
 
@@ -178,6 +179,19 @@ export function applyHtmlArtboardMutation(document, mutation, options = {}) {
     typeof payload.nextName === 'string'
   ) {
     nextDocument = updateFusionPatch(nextDocument, payload.patchId, { name: payload.nextName })
+  }
+
+  if (mutationType === 'fusion_patch_mock_asset_generate' && typeof payload.patchId === 'string') {
+    if (isRecord(payload.nextPatch)) {
+      nextDocument = replaceFusionPatch(nextDocument, payload.patchId, payload.nextPatch)
+    } else {
+      nextDocument = updateFusionPatch(nextDocument, payload.patchId, {
+        patchAssetId: payload.patchAssetId,
+        patchAssetUrl: payload.patchAssetUrl,
+        status: 'mock-generated',
+        provider: 'mock'
+      })
+    }
   }
 
   if (mutationType === 'document_meta_update' && isRecord(payload.meta)) {

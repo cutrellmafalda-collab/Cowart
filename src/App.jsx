@@ -58,6 +58,7 @@ import {
   updateFusionPatchInHtmlArtboard
 } from './html-runtime/htmlArtboardFusionPatchEditing.js'
 import { addFusionPatchPlaceholderToHtmlArtboard } from './html-runtime/htmlArtboardFusionPatches.js'
+import { generateMockFusionPatchAssetForHtmlArtboard } from './html-runtime/htmlArtboardMockFusionPatchAsset.js'
 import { extractHtmlArtboardPatchTargets } from './html-runtime/htmlArtboardPatchTargets.js'
 import {
   cowartShapeToHtmlArtboard,
@@ -1219,7 +1220,9 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
     patch.region?.x,
     patch.region?.y,
     patch.region?.w,
-    patch.region?.h
+    patch.region?.h,
+    patch.patchAssetUrl,
+    patch.status
   ])
 
   function updatePatchDocument(updatedDocument, historyLabel, successMessage) {
@@ -1265,6 +1268,18 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
     updatePatchDocument(updatedDocument, 'delete-html-artboard-fusion-patch', 'Patch deleted')
   }
 
+  function generateMockPatchAsset() {
+    const updatedDocument = generateMockFusionPatchAssetForHtmlArtboard(
+      runtimeDocument,
+      patch.id
+    )
+    updatePatchDocument(
+      updatedDocument,
+      'generate-html-artboard-mock-fusion-patch-asset',
+      'Mock asset generated'
+    )
+  }
+
   function updateRegionDraft(field, value) {
     setDraftRegion((region) => ({
       ...region,
@@ -1283,6 +1298,12 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
       {patch.selector ? <code>{patch.selector}</code> : null}
       {patch.sourceText ? <code>Source: {patch.sourceText}</code> : null}
       <code>{formatFusionPatchRegion(patch.region)}</code>
+      {patch.patchAssetUrl ? (
+        <div className="cowart-html-fusion-asset">
+          <span>Mock asset generated</span>
+          <img alt="" src={patch.patchAssetUrl} />
+        </div>
+      ) : null}
       <label className="cowart-html-fusion-field">
         <span>Name</span>
         <input
@@ -1334,6 +1355,13 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
           onClick={deletePatch}
         >
           Delete
+        </button>
+        <button
+          aria-label={`Generate Mock Patch Asset ${patch.id}`}
+          type="button"
+          onClick={generateMockPatchAsset}
+        >
+          Generate Mock Patch Asset
         </button>
         {patchStatus ? <span>{patchStatus}</span> : null}
       </div>
