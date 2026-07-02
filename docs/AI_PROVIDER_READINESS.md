@@ -345,7 +345,22 @@ Phase 28 introduces a provider interface layer for HTML Artboard FusionPatch gen
 
 This phase is a preparation step only. It makes the future provider boundary clearer without changing Cowart's current safety posture.
 
-## 16. Recommendation
+## 16. Phase 29 OpenAI Provider Adapter
+
+Phase 29 adds an OpenAI image provider adapter, but real calls remain disabled by default.
+
+- The adapter builds a minimal Image API payload for `https://api.openai.com/v1/images/generations`.
+- The adapter uses `fetch` instead of adding an SDK dependency.
+- The adapter reads an API key only from explicit provider options or runtime environment at call time.
+- Missing API keys return `ok: false` with `missing_api_key`; they do not throw and do not call the network.
+- Tests use fake transport only and do not call OpenAI.
+- The first adapter is text-to-image patch asset generation, not image edit or mask generation.
+- Provider payloads do not include API keys, local paths, `.codex/config.toml`, or Cowart canvas store data.
+- The adapter still cannot overwrite HTML/CSS; it can only produce a patch asset result for later guarded application.
+
+Future image edit, mask upload, and preview-reference workflows require separate phases.
+
+## 17. Recommendation
 
 Do not connect real AI yet.
 
@@ -370,7 +385,7 @@ Goal:
 - do not call real APIs
 - make future real providers pluggable
 
-## 17. Final Decision
+## 18. Final Decision
 
 - Cowart can now enter AI provider interface design.
 - Cowart should not directly call real AI yet.
