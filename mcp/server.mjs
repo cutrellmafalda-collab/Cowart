@@ -11,12 +11,18 @@ import {
   createHtmlArtboardEditProposal,
   summarizeHtmlArtboardEditProposal,
 } from "./htmlArtboardEditProposal.mjs";
+import {
+  applyHtmlArtboardDocumentToShapeRecord,
+  createHtmlArtboardApplyPlan,
+  summarizeHtmlArtboardApplyResult,
+} from "./htmlArtboardApplyEdit.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
 const TOOL_GET_SELECTION = "get_cowart_selection";
 const TOOL_GET_SELECTED_HTML_ARTBOARD = "get_cowart_selected_html_artboard";
 const TOOL_PROPOSE_HTML_ARTBOARD_EDIT = "propose_cowart_html_artboard_edit";
+const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -634,6 +640,72 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_APPLY_HTML_ARTBOARD_EDIT,
+      title: "Apply Cowart HTML Artboard Edit",
+      description:
+        "Apply an explicit deterministic edit proposal to the currently selected Cowart HTML Artboard. Requires confirmApply=true.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          cowartUrl: {
+            type: "string",
+            description: "Running Cowart URL, for example http://127.0.0.1:43217.",
+          },
+          instruction: {
+            type: "string",
+            description: "Human-readable edit instruction for the deterministic apply request.",
+          },
+          nextHtml: {
+            type: "string",
+            description: "Explicit next HTML source to apply.",
+          },
+          nextCss: {
+            type: "string",
+            description: "Explicit next CSS source to apply.",
+          },
+          targetSelector: {
+            type: "string",
+            description: "Optional selector for a mock FusionPatch target.",
+          },
+          targetSourceText: {
+            type: "string",
+            description: "Optional source text for a mock FusionPatch target.",
+          },
+          createFusionPatch: {
+            type: "boolean",
+            description: "When true, apply a mock fusion_patch_create mutation.",
+          },
+          fusionPatchPrompt: {
+            type: "string",
+            description: "Prompt text for the mock FusionPatch placeholder.",
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to false.",
+          },
+          confirmApply: {
+            type: "boolean",
+            description: "Must be true to write the proposed document back to the selected HTML Artboard.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -741,6 +813,103 @@ async function handleToolCall(id, params) {
         count: proposals.length,
         dryRun: true,
         proposals,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_APPLY_HTML_ARTBOARD_EDIT) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument === true;
+    const confirmApply = args.confirmApply === true;
+    let saved = false;
+    let appliedCount = 0;
+    let cowartUrl = null;
+    let snapshot = null;
+
+    if (htmlArtboards.length > 0) {
+      const loaded = await loadCanvasSnapshot(args);
+      cowartUrl = loaded.cowartUrl;
+      snapshot = loaded.snapshot;
+    }
+
+    const results = htmlArtboards.map((artboard) => {
+      const shapeRecord = snapshot?.store?.[artboard.shapeId];
+      const planArtboard =
+        shapeRecord?.meta?.cowartHtmlArtboard === true
+          ? {
+              ...artboard,
+              runtimeDocument: shapeRecord.meta.runtimeDocument,
+            }
+          : artboard;
+      let plan = createHtmlArtboardApplyPlan(planArtboard, args);
+
+      if (!shapeRecord) {
+        plan = {
+          ...plan,
+          canApply: false,
+          reason: `Missing shape record in canvas snapshot: ${artboard.shapeId}`,
+        };
+      } else if (shapeRecord.meta?.cowartHtmlArtboard !== true) {
+        plan = {
+          ...plan,
+          canApply: false,
+          reason: `Selected shape is not an HTML Artboard in canvas snapshot: ${artboard.shapeId}`,
+        };
+      }
+
+      let result = {
+        ...plan,
+        applied: false,
+      };
+
+      if (confirmApply && plan.canApply === true) {
+        snapshot.store[artboard.shapeId] = applyHtmlArtboardDocumentToShapeRecord(
+          shapeRecord,
+          plan.proposedDocument
+        );
+        appliedCount += 1;
+        result = {
+          ...result,
+          applied: true,
+          reason: "Applied",
+        };
+      }
+
+      if (!includeProposedDocument) {
+        const { proposedDocument: _proposedDocument, proposal, ...compactResult } = result;
+        const { proposedDocument: _proposalDocument, ...compactProposal } = proposal;
+        return {
+          ...compactResult,
+          proposal: compactProposal,
+        };
+      }
+
+      return result;
+    });
+
+    if (confirmApply && appliedCount > 0) {
+      await saveCanvasSnapshot(cowartUrl, snapshot);
+      saved = true;
+    }
+
+    const summary =
+      results.length === 0
+        ? "No selected HTML Artboard."
+        : results.map((result) => summarizeHtmlArtboardApplyResult(result)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        dryRun: !confirmApply,
+        confirmApply,
+        count: results.length,
+        appliedCount,
+        saved,
+        results,
       },
     });
     return;
