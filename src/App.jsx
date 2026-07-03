@@ -77,8 +77,7 @@ import {
   compareHtmlArtboardPreviewFreshness,
   createHtmlArtboardPreviewMeta,
   getHtmlArtboardPreviewMeta,
-  isHtmlArtboardPreviewShapeForArtboard,
-  summarizeHtmlArtboardPreviewFreshness
+  isHtmlArtboardPreviewShapeForArtboard
 } from './html-runtime/htmlArtboardPreviewFreshness.js'
 import {
   createHtmlArtboardTextLayersFromDocument,
@@ -92,7 +91,7 @@ const VIEW_STATE_ENDPOINT = '/api/view-state'
 const SELECTION_STATE_ELEMENT_ID = 'cowart-selection-state'
 const AI_IMAGE_TOOL_ID = 'ai-image'
 const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
-const HTML_ARTBOARD_TOOL_LABEL = 'HTML Artboard'
+const HTML_ARTBOARD_TOOL_LABEL = 'HTML 画板'
 const HTML_ARTBOARD_PREVIEW_VERSION = 1
 const AI_IMAGE_HOLDER_LABEL = 'AI 图片'
 const AI_IMAGE_HOLDER_DEFAULT_W = 512
@@ -659,7 +658,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     typeName: 'asset',
     type: 'image',
     props: {
-      name: `${HTML_ARTBOARD_TOOL_LABEL} Preview.png`,
+      name: `${HTML_ARTBOARD_TOOL_LABEL} 预览.png`,
       src: dataUrl,
       w: size.w,
       h: size.h,
@@ -1134,10 +1133,10 @@ function CowartHtmlArtboardPreviewControls() {
   const sourceSnapshot = createHtmlArtboardSourceSnapshot(runtimeDocument)
 
   return (
-    <div className="cowart-html-artboard-preview-panel" aria-label="HTML Artboard preview">
+    <div className="cowart-html-artboard-preview-panel" aria-label="HTML 画板面板">
       <section className="cowart-html-artboard-summary">
         <div className="cowart-html-preview-heading">
-          <span>HTML Artboard</span>
+          <span>HTML 画板</span>
           <span>
             {runtimeDocument.width} × {runtimeDocument.height}
           </span>
@@ -1160,16 +1159,16 @@ function CowartHtmlArtboardPreviewControls() {
         selectedShape={shape}
       />
       <details className="cowart-html-advanced">
-        <summary>Advanced</summary>
+        <summary>高级</summary>
         <section className="cowart-html-preview-section">
           <div className="cowart-html-preview-heading">
-            <span>Sandbox Preview</span>
+            <span>安全预览</span>
           </div>
           <iframe
             className="cowart-html-preview-frame"
             sandbox=""
             srcDoc={srcDoc}
-            title="HTML Artboard preview"
+            title="HTML 画板安全预览"
           />
         </section>
         <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
@@ -1185,6 +1184,27 @@ function CowartHtmlArtboardPreviewControls() {
   )
 }
 
+function formatCanvasPreviewFreshness(freshness) {
+  if (freshness?.status === 'current') return '预览已是最新'
+  if (freshness?.status === 'stale') return '预览已过期'
+  return '缺少画布预览'
+}
+
+function formatBackgroundStatus(status) {
+  if (status === 'attached') return '已附加'
+  if (status === 'metadata') return '仅元数据'
+  if (status === 'generated') return '已生成'
+  if (status === 'failed') return '失败'
+  return status
+}
+
+function formatBackgroundType(type) {
+  if (type === 'gradient') return '渐变'
+  if (type === 'image') return '图片'
+  if (type === 'unknown') return '未知'
+  return type
+}
+
 function CowartHtmlArtboardBackgroundSummary({ runtimeDocument }) {
   const background = runtimeDocument.background ?? {}
   const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
@@ -1197,14 +1217,14 @@ function CowartHtmlArtboardBackgroundSummary({ runtimeDocument }) {
         : 'metadata'
 
   return (
-    <section className="cowart-html-background" aria-label="HTML Artboard background">
+    <section className="cowart-html-background" aria-label="HTML 画板背景">
       <div className="cowart-html-preview-heading">
-        <span>Background</span>
-        <span>{status}</span>
+        <span>背景</span>
+        <span>{formatBackgroundStatus(status)}</span>
       </div>
       <div className="cowart-html-background-meta">
-        <span>Type: {type}</span>
-        {backgroundAssetUrl ? <code>{backgroundAssetUrl}</code> : <span>No attached background image.</span>}
+        <span>类型：{formatBackgroundType(type)}</span>
+        {backgroundAssetUrl ? <code>{backgroundAssetUrl}</code> : <span>尚未附加背景图。</span>}
       </div>
     </section>
   )
@@ -1218,11 +1238,11 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
     [editor, selectedShape.id]
   )
   const freshness = compareHtmlArtboardPreviewFreshness(runtimeDocument, previewShape)
-  const freshnessSummary = summarizeHtmlArtboardPreviewFreshness(freshness)
+  const freshnessSummary = formatCanvasPreviewFreshness(freshness)
   const freshnessNote = freshness.isMissing
-    ? 'Create a canvas preview thumbnail.'
+    ? '点击刷新，生成画布缩略图。'
     : freshness.isStale
-      ? 'Refresh Canvas Preview to update the canvas thumbnail.'
+      ? '点击刷新，让画布缩略图同步到最新内容。'
       : ''
 
   useEffect(() => {
@@ -1232,16 +1252,16 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
   async function refreshCanvasPreview() {
     try {
       await refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument)
-      setPreviewStatus('Canvas preview refreshed')
+      setPreviewStatus('已刷新')
     } catch {
-      setPreviewStatus('Refresh failed')
+      setPreviewStatus('刷新失败')
     }
   }
 
   return (
-    <section className="cowart-html-canvas-preview" aria-label="HTML Artboard canvas preview">
+    <section className="cowart-html-canvas-preview" aria-label="HTML 画板画布预览">
       <div className="cowart-html-preview-heading">
-        <span>Canvas Preview</span>
+        <span>画布预览</span>
       </div>
       <div
         className={`cowart-html-preview-status cowart-html-preview-status-${freshness.status}`}
@@ -1257,7 +1277,7 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
           onClick={refreshCanvasPreview}
           type="button"
         >
-          Refresh Canvas Preview
+          刷新画布预览
         </button>
         {previewStatus ? (
           <span className="cowart-html-canvas-preview-status">{previewStatus}</span>
@@ -1398,9 +1418,9 @@ function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selected
       await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
       upsertHtmlArtboardTextLayerShapes(editor, selectedShape, textLayers)
       editor.select(selectedShape.id)
-      setTextLayerStatus(`Ready: ${textLayers.length} text layers`)
+      setTextLayerStatus(`已生成 ${textLayers.length} 个文字层`)
     } catch {
-      setTextLayerStatus('Text layer creation failed')
+      setTextLayerStatus('文字层生成失败')
     }
   }
 
@@ -1408,7 +1428,7 @@ function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selected
     try {
       const currentTextLayerShapes = findHtmlArtboardTextLayerShapes(editor, selectedShape.id)
       if (currentTextLayerShapes.length === 0) {
-        setTextLayerStatus('No canvas text layers')
+        setTextLayerStatus('画布上还没有文字层')
         return
       }
 
@@ -1425,27 +1445,27 @@ function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selected
       )
       await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
       editor.select(selectedShape.id)
-      setTextLayerStatus(`Synced: ${textLayers.length} text layers`)
+      setTextLayerStatus(`已同步 ${textLayers.length} 个文字层`)
     } catch {
-      setTextLayerStatus('Text layer sync failed')
+      setTextLayerStatus('文字层同步失败')
     }
   }
 
   return (
-    <section className="cowart-html-text-layers" aria-label="HTML Artboard text layers">
+    <section className="cowart-html-text-layers" aria-label="HTML 画板文字层">
       <div className="cowart-html-preview-heading">
-        <span>Text Layers</span>
+        <span>文字层</span>
         <span>{textLayerShapes.length || runtimeTextLayers.length}</span>
       </div>
       <p className="cowart-html-text-layer-note">
-        Create canvas text layers, then drag, resize, or double-click each line directly on the canvas.
+        生成后，每一行都能在画布里单独拖动、缩放和双击编辑。
       </p>
       <div className="cowart-html-text-layer-actions">
         <button type="button" onClick={createOrRefreshTextLayers}>
-          Create / Refresh Text Layers
+          生成 / 刷新文字层
         </button>
         <button type="button" onClick={syncTextLayersToRuntime}>
-          Sync Text Layers
+          同步文字层
         </button>
         {textLayerStatus ? <span>{textLayerStatus}</span> : null}
       </div>
@@ -1462,42 +1482,42 @@ function CowartHtmlArtboardSourceControls({ sourceSnapshot }) {
 
   async function copySource(kind, value) {
     if (!navigator.clipboard?.writeText) {
-      setCopyStatus((status) => ({ ...status, [kind]: 'Copy failed' }))
+      setCopyStatus((status) => ({ ...status, [kind]: '复制失败' }))
       return
     }
 
     try {
       await navigator.clipboard.writeText(value)
-      setCopyStatus((status) => ({ ...status, [kind]: 'Copied' }))
+      setCopyStatus((status) => ({ ...status, [kind]: '已复制' }))
     } catch {
-      setCopyStatus((status) => ({ ...status, [kind]: 'Copy failed' }))
+      setCopyStatus((status) => ({ ...status, [kind]: '复制失败' }))
     }
   }
 
   return (
-    <section className="cowart-html-artboard-source" aria-label="HTML Artboard source">
+    <section className="cowart-html-artboard-source" aria-label="HTML 画板源码">
       <div className="cowart-html-preview-heading">
-        <span>Source</span>
+        <span>源码查看</span>
       </div>
       <CowartHtmlSourceSection
-        copyLabel="Copy HTML"
+        copyLabel="复制 HTML"
         copyStatus={copyStatus.html}
         label="HTML"
         onCopy={() => copySource('html', sourceSnapshot.html)}
         value={sourceSnapshot.html}
       />
       <CowartHtmlSourceSection
-        copyLabel="Copy CSS"
+        copyLabel="复制 CSS"
         copyStatus={copyStatus.css}
         label="CSS"
         onCopy={() => copySource('css', sourceSnapshot.css)}
         value={sourceSnapshot.css}
       />
       <CowartHtmlSourceSection
-        copyLabel="Copy JSON"
+        copyLabel="复制 JSON"
         copyStatus={copyStatus.json}
         isJson
-        label="Runtime JSON"
+        label="运行时 JSON"
         onCopy={() => copySource('json', sourceSnapshot.json)}
         value={sourceSnapshot.json}
       />
@@ -1518,7 +1538,7 @@ function CowartHtmlSourceSection({ copyLabel, copyStatus, isJson = false, label,
         </div>
       </div>
       <textarea
-        aria-label={`${label} source`}
+        aria-label={`${label} 源码`}
         className={
           isJson
             ? 'cowart-html-source-textarea cowart-html-source-textarea__json'
@@ -1543,7 +1563,7 @@ function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedSha
   }, [selectedShape.id])
 
   const hasUnsavedChanges = draftHtml !== runtimeDocument.html || draftCss !== runtimeDocument.css
-  const statusText = hasUnsavedChanges ? 'Unsaved changes' : saveStatus
+  const statusText = hasUnsavedChanges ? '有未保存修改' : saveStatus
 
   function saveHtmlArtboardSource() {
     try {
@@ -1564,9 +1584,9 @@ function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedSha
           }
         }
       ])
-      setSaveStatus('Saved')
+      setSaveStatus('已保存')
     } catch {
-      setSaveStatus('Save failed')
+      setSaveStatus('保存失败')
     }
   }
 
@@ -1577,9 +1597,9 @@ function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedSha
   }
 
   return (
-    <section className="cowart-html-artboard-editor" aria-label="HTML Artboard source editor">
+    <section className="cowart-html-artboard-editor" aria-label="HTML 画板源码编辑">
       <div className="cowart-html-preview-heading">
-        <span>Edit Source</span>
+        <span>编辑源码</span>
       </div>
       <label className="cowart-html-editor-section">
         <span>HTML</span>
@@ -1610,7 +1630,7 @@ function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedSha
           onClick={saveHtmlArtboardSource}
           type="button"
         >
-          Save Changes
+          保存修改
         </button>
         <button
           className="cowart-html-editor-reset"
@@ -1618,7 +1638,7 @@ function CowartHtmlArtboardEditorControls({ editor, runtimeDocument, selectedSha
           onClick={resetHtmlArtboardDraft}
           type="button"
         >
-          Reset
+          重置
         </button>
         {statusText ? <span className="cowart-html-editor-status">{statusText}</span> : null}
       </div>
@@ -1631,13 +1651,13 @@ function CowartHtmlArtboardMutationLog({ runtimeDocument }) {
   const recentMutations = mutationLog.slice(-3).reverse()
 
   return (
-    <section className="cowart-html-mutation-log" aria-label="HTML Artboard mutation log">
+    <section className="cowart-html-mutation-log" aria-label="HTML 画板变更记录">
       <div className="cowart-html-preview-heading">
-        <span>Mutation Log</span>
-        <span>Total: {mutationLog.length}</span>
+        <span>变更记录</span>
+        <span>共 {mutationLog.length} 条</span>
       </div>
       {recentMutations.length === 0 ? (
-        <p className="cowart-html-mutation-empty">No mutations yet.</p>
+        <p className="cowart-html-mutation-empty">还没有变更记录。</p>
       ) : (
         <ol className="cowart-html-mutation-list">
           {recentMutations.map((mutation, index) => (
@@ -1656,9 +1676,25 @@ function CowartHtmlArtboardMutationLog({ runtimeDocument }) {
 }
 
 function formatFusionPatchRegion(region) {
-  if (!region || typeof region !== 'object') return 'Region: none'
+  if (!region || typeof region !== 'object') return '区域：无'
 
-  return `Region: x ${region.x}, y ${region.y}, w ${region.w}, h ${region.h}`
+  return `区域：x ${region.x}，y ${region.y}，宽 ${region.w}，高 ${region.h}`
+}
+
+function formatFusionPatchStatus(status) {
+  if (status === 'placeholder') return '占位'
+  if (status === 'mock-generated') return '模拟生成'
+  if (status === 'generated') return '已生成'
+  if (status === 'failed') return '失败'
+  return status || '未知'
+}
+
+function formatFusionPatchProvider(provider) {
+  if (provider === 'mock') return '模拟'
+  if (provider === 'codex-image-gen') return 'Codex 生图'
+  if (provider === 'external-image-gen') return '外部生图'
+  if (provider === 'fixture-image-gen') return '测试图片'
+  return provider || '未知来源'
 }
 
 function createFusionPatchRegionDraft(region) {
@@ -1744,7 +1780,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
 
   function updatePatchDocument(updatedDocument, historyLabel, successMessage) {
     if (!hasRuntimeDocumentChange(runtimeDocument, updatedDocument)) {
-      setPatchStatus('No patch changes')
+      setPatchStatus('没有可应用的修改')
       return
     }
 
@@ -1755,7 +1791,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
   function applyPatchChanges() {
     const nextRegion = parseFusionPatchRegionDraft(draftRegion)
     if (!nextRegion) {
-      setPatchStatus('Invalid region')
+      setPatchStatus('区域数值无效')
       return
     }
 
@@ -1764,7 +1800,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
       prompt: draftPrompt,
       region: nextRegion
     })
-    updatePatchDocument(updatedDocument, 'update-html-artboard-fusion-patch', 'Patch updated')
+    updatePatchDocument(updatedDocument, 'update-html-artboard-fusion-patch', '图层已更新')
   }
 
   function togglePatchVisibility() {
@@ -1776,13 +1812,13 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
     updatePatchDocument(
       updatedDocument,
       'toggle-html-artboard-fusion-patch-visibility',
-      visible ? 'Patch hidden' : 'Patch shown'
+      visible ? '已隐藏' : '已显示'
     )
   }
 
   function deletePatch() {
     const updatedDocument = deleteFusionPatchFromHtmlArtboard(runtimeDocument, patch.id)
-    updatePatchDocument(updatedDocument, 'delete-html-artboard-fusion-patch', 'Patch deleted')
+    updatePatchDocument(updatedDocument, 'delete-html-artboard-fusion-patch', '图层已删除')
   }
 
   function generateMockPatchAsset() {
@@ -1793,7 +1829,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
     updatePatchDocument(
       updatedDocument,
       'generate-html-artboard-mock-fusion-patch-asset',
-      'Mock asset generated'
+      '已生成模拟素材'
     )
   }
 
@@ -1809,20 +1845,20 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
       <div className="cowart-html-fusion-meta">
         <span>{patch.name}</span>
         <span>
-          {patch.status} 路 {patch.provider} 路 {visible ? 'Visible' : 'Hidden'}
+          {formatFusionPatchStatus(patch.status)} · {formatFusionPatchProvider(patch.provider)} · {visible ? '显示' : '隐藏'}
         </span>
       </div>
       {patch.selector ? <code>{patch.selector}</code> : null}
-      {patch.sourceText ? <code>Source: {patch.sourceText}</code> : null}
+      {patch.sourceText ? <code>源文字：{patch.sourceText}</code> : null}
       <code>{formatFusionPatchRegion(patch.region)}</code>
       {patch.patchAssetUrl ? (
         <div className="cowart-html-fusion-asset">
-          <span>Mock asset generated</span>
+          <span>已有图像素材</span>
           <img alt="" src={patch.patchAssetUrl} />
         </div>
       ) : null}
       <label className="cowart-html-fusion-field">
-        <span>Name</span>
+        <span>名称</span>
         <input
           aria-label={`Fusion patch name ${patch.id}`}
           value={draftName}
@@ -1830,55 +1866,59 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
         />
       </label>
       <label className="cowart-html-fusion-field">
-        <span>Prompt</span>
+        <span>提示词</span>
         <textarea
           aria-label={`Fusion patch prompt ${patch.id}`}
           value={draftPrompt}
           onChange={(event) => setDraftPrompt(event.target.value)}
         />
       </label>
-      <div className="cowart-html-fusion-region" aria-label={`Fusion patch region ${patch.id}`}>
-        {['x', 'y', 'w', 'h'].map((field) => (
-          <label key={field}>
-            <span>{field}</span>
-            <input
-              aria-label={`Fusion patch region ${field} ${patch.id}`}
-              min={field === 'w' || field === 'h' ? 1 : undefined}
-              type="number"
-              value={draftRegion[field]}
-              onChange={(event) => updateRegionDraft(field, event.target.value)}
-            />
-          </label>
-        ))}
+      <div className="cowart-html-fusion-region" aria-label={`融合图层区域 ${patch.id}`}>
+        {['x', 'y', 'w', 'h'].map((field) => {
+          const fieldLabel = field === 'w' ? '宽' : field === 'h' ? '高' : field.toUpperCase()
+
+          return (
+            <label key={field}>
+              <span>{fieldLabel}</span>
+              <input
+                aria-label={`融合图层区域 ${fieldLabel} ${patch.id}`}
+                min={field === 'w' || field === 'h' ? 1 : undefined}
+                type="number"
+                value={draftRegion[field]}
+                onChange={(event) => updateRegionDraft(field, event.target.value)}
+              />
+            </label>
+          )
+        })}
       </div>
       <div className="cowart-html-fusion-actions">
         <button
-          aria-label={`Apply Fusion Patch Changes ${patch.id}`}
+          aria-label={`应用融合图层修改 ${patch.id}`}
           type="button"
           onClick={applyPatchChanges}
         >
-          Apply Patch Changes
+          应用修改
         </button>
         <button
-          aria-label={`${visible ? 'Hide' : 'Show'} Fusion Patch ${patch.id}`}
+          aria-label={`${visible ? '隐藏' : '显示'}融合图层 ${patch.id}`}
           type="button"
           onClick={togglePatchVisibility}
         >
-          {visible ? 'Hide' : 'Show'}
+          {visible ? '隐藏' : '显示'}
         </button>
         <button
-          aria-label={`Delete Fusion Patch ${patch.id}`}
+          aria-label={`删除融合图层 ${patch.id}`}
           type="button"
           onClick={deletePatch}
         >
-          Delete
+          删除
         </button>
         <button
-          aria-label={`Generate Mock Patch Asset ${patch.id}`}
+          aria-label={`生成模拟素材 ${patch.id}`}
           type="button"
           onClick={generateMockPatchAsset}
         >
-          Generate Mock Patch Asset
+          生成模拟素材
         </button>
         {patchStatus ? <span>{patchStatus}</span> : null}
       </div>
@@ -1916,7 +1956,7 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
           sourceSelector: selectedTarget.selector,
           sourceText: selectedTarget.sourceText,
           name: selectedTarget.label || selectedTarget.dataNode,
-          prompt: `Mock fusion patch for ${selectedTarget.sourceText || selectedTarget.dataNode}`
+          prompt: `为「${selectedTarget.sourceText || selectedTarget.dataNode}」生成一个融合图层`
         }
       : {}
     const updatedDocument = addFusionPatchPlaceholderToHtmlArtboard(
@@ -1939,24 +1979,24 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
   }
 
   return (
-    <section className="cowart-html-fusion-patches" aria-label="HTML Artboard fusion patches">
+    <section className="cowart-html-fusion-patches" aria-label="HTML 画板融合图层">
       <div className="cowart-html-preview-heading">
-        <span>Fusion Patches</span>
-        <span>Total: {fusionPatches.length}</span>
+        <span>融合图层</span>
+        <span>共 {fusionPatches.length} 个</span>
       </div>
-      <section className="cowart-html-patch-targets" aria-label="HTML Artboard patch targets">
+      <section className="cowart-html-patch-targets" aria-label="HTML 画板目标节点">
         <div className="cowart-html-preview-heading">
-          <span>Patch Targets</span>
-          <span>{patchTargets.length} found</span>
+          <span>目标节点</span>
+          <span>找到 {patchTargets.length} 个</span>
         </div>
         {patchTargets.length === 0 ? (
           <p className="cowart-html-patch-target-empty">
-            No data-node patch targets found.
+            没有找到 data-node 目标节点。
           </p>
         ) : (
           <>
             <label className="cowart-html-patch-target-select">
-              <span>Target</span>
+              <span>目标</span>
               <select
                 value={selectedTarget?.id ?? ''}
                 onChange={(event) => setSelectedTargetId(event.target.value)}
@@ -1970,14 +2010,14 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
             </label>
             <div className="cowart-html-patch-target-meta">
               <code>{selectedTarget?.selector}</code>
-              <span>{selectedTarget?.sourceText || 'No source text.'}</span>
+              <span>{selectedTarget?.sourceText || '没有源文字。'}</span>
             </div>
           </>
         )}
       </section>
       <CowartHtmlArtboardAiGenerationStatus />
       {fusionPatches.length === 0 ? (
-        <p className="cowart-html-fusion-empty">No fusion patches yet.</p>
+        <p className="cowart-html-fusion-empty">还没有融合图层。</p>
       ) : (
         <ol className="cowart-html-fusion-list">
           {fusionPatches.map((patch) => (
@@ -1991,19 +2031,19 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
               <div className="cowart-html-fusion-meta">
                 <span>{patch.name}</span>
                 <span>
-                  {patch.status} · {patch.provider} · {patch.visible === false ? 'Hidden' : 'Visible'}
+                  {formatFusionPatchStatus(patch.status)} · {formatFusionPatchProvider(patch.provider)} · {patch.visible === false ? '隐藏' : '显示'}
                 </span>
               </div>
               <p>{patch.prompt}</p>
               {patch.selector ? <code>{patch.selector}</code> : null}
-              {patch.sourceText ? <code>Source: {patch.sourceText}</code> : null}
+              {patch.sourceText ? <code>源文字：{patch.sourceText}</code> : null}
               <code>{formatFusionPatchRegion(patch.region)}</code>
             </CowartHtmlFusionPatchEditor>
           ))}
         </ol>
       )}
       <button className="cowart-html-fusion-add" onClick={addMockFusionPatch} type="button">
-        Add Mock Fusion Patch
+        添加模拟融合图层
       </button>
     </section>
   )
@@ -2011,17 +2051,17 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
 
 function CowartHtmlArtboardAiGenerationStatus() {
   return (
-    <section className="cowart-html-ai-generation-status" aria-label="HTML Artboard AI generation status">
+    <section className="cowart-html-ai-generation-status" aria-label="HTML 画板 AI 生成状态">
       <div className="cowart-html-preview-heading">
-        <span>AI Generation</span>
+        <span>AI 生成</span>
       </div>
       <div className="cowart-html-ai-generation-status-list">
-        <span>Mock provider available</span>
-        <span>Real provider requires MCP/server-side configuration</span>
-        <span>No browser-side API key</span>
+        <span>模拟生成可用</span>
+        <span>真实生图通过 MCP / 外部工具完成</span>
+        <span>浏览器端不读取 API Key</span>
       </div>
       <button className="cowart-html-ai-generation-button" disabled type="button">
-        Generate AI Patch
+        真实 AI 生成未启用
       </button>
     </section>
   )
@@ -2046,9 +2086,9 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
   const exportItems = [
     {
       id: 'runtime-json',
-      label: 'Runtime JSON',
-      copyLabel: 'Copy Runtime JSON',
-      downloadLabel: 'Download Runtime JSON',
+      label: '运行时 JSON',
+      copyLabel: '复制 JSON',
+      downloadLabel: '下载 JSON',
       value: exportBundle.json,
       mimeType: 'application/json',
       fileName: createHtmlArtboardExportFileName(
@@ -2059,8 +2099,8 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     {
       id: 'html',
       label: 'HTML',
-      copyLabel: 'Copy HTML',
-      downloadLabel: 'Download HTML',
+      copyLabel: '复制 HTML',
+      downloadLabel: '下载 HTML',
       value: exportBundle.html,
       mimeType: 'text/html',
       fileName: createHtmlArtboardExportFileName(
@@ -2071,8 +2111,8 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     {
       id: 'css',
       label: 'CSS',
-      copyLabel: 'Copy CSS',
-      downloadLabel: 'Download CSS',
+      copyLabel: '复制 CSS',
+      downloadLabel: '下载 CSS',
       value: exportBundle.css,
       mimeType: 'text/css',
       fileName: createHtmlArtboardExportFileName(
@@ -2082,9 +2122,9 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     },
     {
       id: 'standalone-html',
-      label: 'Standalone HTML',
-      copyLabel: 'Copy Standalone HTML',
-      downloadLabel: 'Download Standalone HTML',
+      label: '独立预览 HTML',
+      copyLabel: '复制独立 HTML',
+      downloadLabel: '下载独立 HTML',
       value: exportBundle.standaloneHtml,
       mimeType: 'text/html',
       fileName: createHtmlArtboardExportFileName(
@@ -2100,21 +2140,21 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
 
   async function copyExportItem(item) {
     if (!navigator.clipboard?.writeText) {
-      setExportStatus('Copy failed')
+      setExportStatus('复制失败')
       return
     }
 
     try {
       await navigator.clipboard.writeText(item.value)
-      setExportStatus('Copied')
+      setExportStatus('已复制')
     } catch {
-      setExportStatus('Copy failed')
+      setExportStatus('复制失败')
     }
   }
 
   function downloadExportItem(item) {
     if (!window.URL?.createObjectURL) {
-      setExportStatus('Download failed')
+      setExportStatus('下载失败')
       return
     }
 
@@ -2126,9 +2166,9 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
       link.href = objectUrl
       link.download = item.fileName
       link.click()
-      setExportStatus('Downloaded')
+      setExportStatus('已下载')
     } catch {
-      setExportStatus('Download failed')
+      setExportStatus('下载失败')
     } finally {
       if (objectUrl) {
         window.URL.revokeObjectURL(objectUrl)
@@ -2137,12 +2177,12 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
   }
 
   return (
-    <section className="cowart-html-export" aria-label="HTML Artboard export">
+    <section className="cowart-html-export" aria-label="HTML 画板导出">
       <div className="cowart-html-preview-heading">
-        <span>Export</span>
+        <span>导出</span>
         {exportStatus ? <span>{exportStatus}</span> : null}
       </div>
-      <p className="cowart-html-export-note">Exports runtime document content only.</p>
+      <p className="cowart-html-export-note">只导出当前 HTML 画板的运行时内容。</p>
       <div className="cowart-html-export-grid">
         {exportItems.map((item) => (
           <div key={item.id} className="cowart-html-export-row">
