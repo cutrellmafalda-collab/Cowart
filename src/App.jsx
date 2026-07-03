@@ -348,14 +348,57 @@ function createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument) {
   }
 }
 
-function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument) {
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener('load', () => {
+      resolve(typeof reader.result === 'string' ? reader.result : '')
+    })
+    reader.addEventListener('error', () => reject(reader.error ?? new Error('Failed to read blob')))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function createThumbnailPatchAssetUrlResolver(runtimeDocument) {
+  const patchAssetUrls = [
+    ...new Set(
+      (Array.isArray(runtimeDocument.fusionPatches) ? runtimeDocument.fusionPatches : [])
+        .map((patch) => patch.patchAssetUrl)
+        .filter((url) => typeof url === 'string' && url.length > 0 && !url.startsWith('data:'))
+    )
+  ]
+  const resolvedUrls = new Map()
+
+  await Promise.all(
+    patchAssetUrls.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: 'no-store' })
+        if (!response.ok) return
+
+        const blob = await response.blob()
+        if (!blob.type.startsWith('image/')) return
+
+        resolvedUrls.set(url, await blobToDataUrl(blob))
+      } catch {
+        // Keep the original URL when the page-local asset cannot be inlined.
+      }
+    })
+  )
+
+  return (url) => resolvedUrls.get(url) ?? url
+}
+
+async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument) {
   const size = getHtmlArtboardPreviewSize(runtimeDocument, selectedShape)
   const thumbnailDocument = {
     ...runtimeDocument,
     width: size.w,
     height: size.h
   }
-  const dataUrl = createHtmlArtboardThumbnailDataUrl(thumbnailDocument)
+  const patchAssetUrlResolver = await createThumbnailPatchAssetUrlResolver(runtimeDocument)
+  const dataUrl = createHtmlArtboardThumbnailDataUrl(thumbnailDocument, {
+    patchAssetUrlResolver
+  })
   const altText = createHtmlArtboardThumbnailAltText(thumbnailDocument)
   const existingPreviewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
   const assetId =
@@ -898,9 +941,9 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
     setPreviewStatus('')
   }, [selectedShape.id, runtimeDocument.html, runtimeDocument.css])
 
-  function refreshCanvasPreview() {
+  async function refreshCanvasPreview() {
     try {
-      refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument)
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument)
       setPreviewStatus('Canvas preview refreshed')
     } catch {
       setPreviewStatus('Refresh failed')

@@ -47,12 +47,23 @@ function createFusionPatchOverlayLabel(patch) {
   )
 }
 
-function createGeneratedPatchAssetOverlay(patch, region) {
+function resolvePatchAssetUrl(patchAssetUrl, options) {
+  if (typeof patchAssetUrl !== 'string' || patchAssetUrl.length === 0) return ''
+
+  if (typeof options.patchAssetUrlResolver === 'function') {
+    const resolvedUrl = options.patchAssetUrlResolver(patchAssetUrl)
+    if (typeof resolvedUrl === 'string' && resolvedUrl.length > 0) return resolvedUrl
+  }
+
+  return patchAssetUrl
+}
+
+function createGeneratedPatchAssetOverlay(patch, region, options) {
   if (typeof patch.patchAssetUrl !== 'string' || patch.patchAssetUrl.length === 0) {
     return ''
   }
 
-  const href = escapeAttribute(patch.patchAssetUrl)
+  const href = escapeAttribute(resolvePatchAssetUrl(patch.patchAssetUrl, options))
   const badgeY = region.y + 8
   const textY = region.y + 24
 
@@ -100,7 +111,7 @@ export function createHtmlArtboardFusionPatchOverlaySvg(document, options = {}) 
       const labelY = Math.max(16, region.y - 10)
       const labelBackgroundY = Math.max(0, region.y - 30)
       const labelBackgroundWidth = Math.max(120, Math.min(region.w, 360))
-      const generatedPatchAssetOverlay = createGeneratedPatchAssetOverlay(patch, region)
+      const generatedPatchAssetOverlay = createGeneratedPatchAssetOverlay(patch, region, options)
 
       return `    <g class="cowart-html-artboard-fusion-patch-overlay" opacity="${opacity}">
 ${generatedPatchAssetOverlay}
@@ -118,11 +129,11 @@ ${overlays.join('\n')}
   </g>`
 }
 
-export function createHtmlArtboardThumbnailSvg(document) {
+export function createHtmlArtboardThumbnailSvg(document, options = {}) {
   const normalizedDocument = ensureHtmlArtboardDocument(document)
   const width = safeDimension(normalizedDocument.width, 720)
   const height = safeDimension(normalizedDocument.height, 1280)
-  const fusionPatchOverlaySvg = createHtmlArtboardFusionPatchOverlaySvg(document)
+  const fusionPatchOverlaySvg = createHtmlArtboardFusionPatchOverlaySvg(document, options)
 
   return `<svg xmlns="${SVG_XMLNS}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(createHtmlArtboardThumbnailAltText(normalizedDocument))}">
   <foreignObject x="0" y="0" width="${width}" height="${height}">
@@ -139,8 +150,8 @@ ${fusionPatchOverlaySvg}
 </svg>`
 }
 
-export function createHtmlArtboardThumbnailDataUrl(document) {
-  return encodeSvgDataUrl(createHtmlArtboardThumbnailSvg(document))
+export function createHtmlArtboardThumbnailDataUrl(document, options = {}) {
+  return encodeSvgDataUrl(createHtmlArtboardThumbnailSvg(document, options))
 }
 
 export function createHtmlArtboardThumbnailAltText(document) {

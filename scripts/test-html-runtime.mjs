@@ -994,6 +994,27 @@ test('thumbnail data url includes encoded overlay', () => {
   assert.equal(decodedSvg.includes('cowart-html-artboard-fusion-patch-overlays'), true)
 })
 
+test('thumbnail svg can inline external fusion patch asset urls', () => {
+  const document = createHtmlArtboardDocument({
+    fusionPatches: [
+      createFusionPatchPlaceholder({
+        name: 'External Asset Patch',
+        region: { x: 20, y: 30, w: 100, h: 70 },
+        patchAssetUrl: '/page-assets/page/external-patch.png'
+      })
+    ]
+  })
+  const svg = createHtmlArtboardThumbnailSvg(document, {
+    patchAssetUrlResolver: (url) =>
+      url === '/page-assets/page/external-patch.png'
+        ? 'data:image/png;base64,external-patch-data'
+        : url
+  })
+
+  assert.equal(svg.includes('data:image/png;base64,external-patch-data'), true)
+  assert.equal(svg.includes('href="/page-assets/page/external-patch.png"'), false)
+})
+
 test('createHtmlArtboardPreviewMeta returns cowartHtmlArtboardPreview true', () => {
   const meta = createHtmlArtboardPreviewMeta(createHtmlArtboardDocument())
 
