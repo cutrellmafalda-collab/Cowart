@@ -53,6 +53,7 @@ export function createRenderFingerprint(document) {
     background: document?.background ?? null,
     html: document?.html ?? '',
     css: document?.css ?? '',
+    textLayers: document?.textLayers ?? [],
     fusionPatches: document?.fusionPatches ?? [],
     assets: document?.assets ?? []
   }

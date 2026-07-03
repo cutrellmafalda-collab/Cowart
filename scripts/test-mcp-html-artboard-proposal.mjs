@@ -24,6 +24,7 @@ function createRuntimeDocument(overrides = {}) {
     },
     html: "<section><h1>Original</h1></section>",
     css: "section { color: black; }",
+    textLayers: [],
     fusionPatches: [],
     assets: [],
     history: [],

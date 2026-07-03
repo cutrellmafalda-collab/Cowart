@@ -119,6 +119,7 @@ export function ensureHtmlArtboardDocument(document = {}) {
   ensured.background = isRecord(source.background) ? deepClone(source.background) : deepClone(DEFAULT_BACKGROUND)
   ensured.html = typeof source.html === 'string' ? source.html : DEFAULT_HTML
   ensured.css = typeof source.css === 'string' ? source.css : DEFAULT_CSS
+  ensured.textLayers = normalizeArray(source.textLayers)
   ensured.fusionPatches = normalizeFusionPatches(source.fusionPatches)
   ensured.assets = normalizeArray(source.assets)
   ensured.history = normalizeArray(source.history)

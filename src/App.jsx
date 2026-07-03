@@ -37,6 +37,7 @@ import {
   XBoxToolbarItem,
   createShapeId,
   onDragFromToolbarToCreateShape,
+  renderPlaintextFromRichText,
   startEditingShapeWithRichText,
   toRichText,
   useEditor,
@@ -79,6 +80,10 @@ import {
   isHtmlArtboardPreviewShapeForArtboard,
   summarizeHtmlArtboardPreviewFreshness
 } from './html-runtime/htmlArtboardPreviewFreshness.js'
+import {
+  createHtmlArtboardTextLayersFromDocument,
+  updateHtmlArtboardTextLayers
+} from './html-runtime/htmlArtboardTextLayers.js'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -336,11 +341,28 @@ function findHtmlArtboardPreviewShape(editor, sourceShapeId) {
   })[0]
 }
 
+function findHtmlArtboardTextLayerShapes(editor, sourceShapeId) {
+  return editor.getCurrentPageShapesSorted().filter((shape) => {
+    return (
+      shape?.type === 'text' &&
+      shape?.meta?.cowartHtmlArtboardTextLayer === true &&
+      shape?.meta?.sourceHtmlArtboardShapeId === sourceShapeId
+    )
+  })
+}
+
 function resolveHtmlArtboardSelection(editor, shape) {
   const runtimeDocument = cowartShapeToHtmlArtboard(shape)
   if (runtimeDocument) return { runtimeDocument, shape }
 
-  if (shape?.type !== 'image' || shape?.meta?.cowartHtmlArtboardPreview !== true) return null
+  if (
+    !(
+      (shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardPreview === true) ||
+      (shape?.type === 'text' && shape?.meta?.cowartHtmlArtboardTextLayer === true)
+    )
+  ) {
+    return null
+  }
 
   const sourceShapeId = shape.meta.sourceHtmlArtboardShapeId
   if (typeof sourceShapeId !== 'string') return null
@@ -348,6 +370,10 @@ function resolveHtmlArtboardSelection(editor, shape) {
   const sourceShape = editor.getShape(sourceShapeId)
   const sourceRuntimeDocument = cowartShapeToHtmlArtboard(sourceShape)
   return sourceRuntimeDocument ? { runtimeDocument: sourceRuntimeDocument, shape: sourceShape } : null
+}
+
+function hasHtmlArtboardTextLayers(runtimeDocument) {
+  return Array.isArray(runtimeDocument?.textLayers) && runtimeDocument.textLayers.length > 0
 }
 
 function createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument) {
@@ -622,7 +648,9 @@ async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetU
     drawCoverImage(context, backgroundImage, 0, 0, width, height)
   }
 
-  drawPreviewTextFallback(context, runtimeDocument, width, height)
+  if (!hasHtmlArtboardTextLayers(runtimeDocument)) {
+    drawPreviewTextFallback(context, runtimeDocument, width, height)
+  }
 
   const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
     ? runtimeDocument.fusionPatches
@@ -1129,39 +1157,52 @@ function CowartHtmlArtboardPreviewControls() {
 
   return (
     <div className="cowart-html-artboard-preview-panel" aria-label="HTML Artboard preview">
-      <section className="cowart-html-preview-section">
+      <section className="cowart-html-artboard-summary">
         <div className="cowart-html-preview-heading">
           <span>HTML Artboard</span>
           <span>
             {runtimeDocument.width} × {runtimeDocument.height}
           </span>
         </div>
-        <iframe
-          className="cowart-html-preview-frame"
-          sandbox=""
-          srcDoc={srcDoc}
-          title="HTML Artboard preview"
-        />
       </section>
       <CowartHtmlArtboardCanvasPreviewControls
         editor={editor}
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
-      <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
-      <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
-      <CowartHtmlArtboardEditorControls
+      <CowartHtmlArtboardTextLayerControls
         editor={editor}
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
-      <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
+      <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
       <CowartHtmlArtboardFusionPatches
         editor={editor}
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
-      <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
+      <details className="cowart-html-advanced">
+        <summary>Advanced</summary>
+        <section className="cowart-html-preview-section">
+          <div className="cowart-html-preview-heading">
+            <span>Sandbox Preview</span>
+          </div>
+          <iframe
+            className="cowart-html-preview-frame"
+            sandbox=""
+            srcDoc={srcDoc}
+            title="HTML Artboard preview"
+          />
+        </section>
+        <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
+        <CowartHtmlArtboardEditorControls
+          editor={editor}
+          runtimeDocument={runtimeDocument}
+          selectedShape={shape}
+        />
+        <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
+        <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
+      </details>
     </div>
   )
 }
@@ -1243,6 +1284,192 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
         {previewStatus ? (
           <span className="cowart-html-canvas-preview-status">{previewStatus}</span>
         ) : null}
+      </div>
+    </section>
+  )
+}
+
+function getTextLayerTextShapeProps(layer) {
+  const textAlign = layer.align === 'center' ? 'middle' : layer.align === 'end' ? 'end' : 'start'
+  const scale = Math.max(0.25, Number(layer.scale) || Number(layer.fontSize) / 32 || 1)
+
+  return {
+    color: 'black',
+    size: 'xl',
+    font: 'sans',
+    textAlign,
+    w: Math.max(32, Number(layer.w) || 240),
+    richText: toRichText(layer.text ?? ''),
+    scale,
+    autoSize: false
+  }
+}
+
+function createTextLayerShapeMeta(selectedShape, layer) {
+  return {
+    cowartHtmlArtboardTextLayer: true,
+    sourceHtmlArtboardShapeId: selectedShape.id,
+    runtimeTextLayerId: layer.id,
+    dataNode: layer.dataNode,
+    selector: layer.selector
+  }
+}
+
+function upsertHtmlArtboardTextLayerShapes(editor, selectedShape, textLayers) {
+  const existingShapes = findHtmlArtboardTextLayerShapes(editor, selectedShape.id)
+  const existingByLayerId = new Map(
+    existingShapes
+      .map((shape) => [shape.meta?.runtimeTextLayerId, shape])
+      .filter(([layerId]) => typeof layerId === 'string' && layerId)
+  )
+  const nextLayerIds = new Set(textLayers.map((layer) => layer.id))
+  const updates = []
+  const createdShapeIds = []
+
+  for (const layer of textLayers) {
+    const existingShape = existingByLayerId.get(layer.id)
+    const shapeRecord = {
+      id: existingShape?.id ?? createShapeId(),
+      type: 'text',
+      x: selectedShape.x + layer.x,
+      y: selectedShape.y + layer.y,
+      rotation: selectedShape.rotation ?? 0,
+      parentId: selectedShape.parentId,
+      opacity: layer.visible === false ? 0 : 1,
+      props: getTextLayerTextShapeProps(layer),
+      meta: {
+        ...(existingShape?.meta ?? {}),
+        ...createTextLayerShapeMeta(selectedShape, layer)
+      }
+    }
+
+    if (existingShape) {
+      updates.push(shapeRecord)
+    } else {
+      editor.createShape(shapeRecord)
+      createdShapeIds.push(shapeRecord.id)
+    }
+  }
+
+  if (updates.length > 0) editor.updateShapes(updates)
+
+  const staleShapeIds = existingShapes
+    .filter((shape) => !nextLayerIds.has(shape.meta?.runtimeTextLayerId))
+    .map((shape) => shape.id)
+  if (staleShapeIds.length > 0) editor.deleteShapes(staleShapeIds)
+
+  return [...updates.map((shape) => shape.id), ...createdShapeIds]
+}
+
+function getTextLayerFromShape(editor, selectedShape, textShape) {
+  const pageBounds = editor.getShapePageBounds?.(textShape)
+  const text =
+    typeof textShape.props?.richText === 'object'
+      ? renderPlaintextFromRichText(editor, textShape.props.richText)
+      : ''
+  const scale = Number(textShape.props?.scale) || 1
+
+  return {
+    id: textShape.meta.runtimeTextLayerId,
+    type: 'text',
+    dataNode: textShape.meta.dataNode ?? null,
+    selector: textShape.meta.selector ?? null,
+    sourceText: text,
+    text,
+    x: Math.round(textShape.x - selectedShape.x),
+    y: Math.round(textShape.y - selectedShape.y),
+    w: Math.round(pageBounds?.w ?? textShape.props?.w ?? 240),
+    h: Math.round(pageBounds?.h ?? 48 * scale),
+    fontSize: Math.round(32 * scale),
+    scale,
+    color: textShape.props?.color ?? 'black',
+    align: textShape.props?.textAlign === 'middle' ? 'center' : textShape.props?.textAlign ?? 'start',
+    visible: textShape.opacity !== 0,
+    meta: {}
+  }
+}
+
+function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selectedShape }) {
+  const [textLayerStatus, setTextLayerStatus] = useState('')
+  const textLayerShapes = useValue(
+    'selected html artboard text layer shapes',
+    () => findHtmlArtboardTextLayerShapes(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const runtimeTextLayers = Array.isArray(runtimeDocument.textLayers)
+    ? runtimeDocument.textLayers
+    : []
+
+  useEffect(() => {
+    setTextLayerStatus('')
+  }, [selectedShape.id, runtimeDocument.renderFingerprint])
+
+  async function createOrRefreshTextLayers() {
+    try {
+      const textLayers = createHtmlArtboardTextLayersFromDocument(runtimeDocument, {
+        recreate: true
+      })
+      const updatedDocument = updateHtmlArtboardTextLayers(runtimeDocument, textLayers)
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'create-html-artboard-text-layers'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      upsertHtmlArtboardTextLayerShapes(editor, selectedShape, textLayers)
+      editor.select(selectedShape.id)
+      setTextLayerStatus(`Ready: ${textLayers.length} text layers`)
+    } catch {
+      setTextLayerStatus('Text layer creation failed')
+    }
+  }
+
+  async function syncTextLayersToRuntime() {
+    try {
+      const currentTextLayerShapes = findHtmlArtboardTextLayerShapes(editor, selectedShape.id)
+      if (currentTextLayerShapes.length === 0) {
+        setTextLayerStatus('No canvas text layers')
+        return
+      }
+
+      const textLayers = currentTextLayerShapes.map((shape) =>
+        getTextLayerFromShape(editor, selectedShape, shape)
+      )
+      const updatedDocument = updateHtmlArtboardTextLayers(runtimeDocument, textLayers)
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'sync-html-artboard-text-layers'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      editor.select(selectedShape.id)
+      setTextLayerStatus(`Synced: ${textLayers.length} text layers`)
+    } catch {
+      setTextLayerStatus('Text layer sync failed')
+    }
+  }
+
+  return (
+    <section className="cowart-html-text-layers" aria-label="HTML Artboard text layers">
+      <div className="cowart-html-preview-heading">
+        <span>Text Layers</span>
+        <span>{textLayerShapes.length || runtimeTextLayers.length}</span>
+      </div>
+      <p className="cowart-html-text-layer-note">
+        Create canvas text layers, then drag, resize, or double-click each line directly on the canvas.
+      </p>
+      <div className="cowart-html-text-layer-actions">
+        <button type="button" onClick={createOrRefreshTextLayers}>
+          Create / Refresh Text Layers
+        </button>
+        <button type="button" onClick={syncTextLayersToRuntime}>
+          Sync Text Layers
+        </button>
+        {textLayerStatus ? <span>{textLayerStatus}</span> : null}
       </div>
     </section>
   )

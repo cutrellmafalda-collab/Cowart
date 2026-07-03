@@ -95,6 +95,12 @@ import {
   isHtmlArtboardPreviewShapeForArtboard,
   summarizeHtmlArtboardPreviewFreshness
 } from '../src/html-runtime/htmlArtboardPreviewFreshness.js'
+import {
+  applyHtmlArtboardTextLayersToHtml,
+  createHtmlArtboardTextLayersFromDocument,
+  normalizeHtmlArtboardTextLayers,
+  updateHtmlArtboardTextLayers
+} from '../src/html-runtime/htmlArtboardTextLayers.js'
 
 const forbiddenUiFields = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
@@ -120,6 +126,7 @@ test('createHtmlArtboardDocument returns required schema fields', () => {
     'background',
     'html',
     'css',
+    'textLayers',
     'fusionPatches',
     'assets',
     'history',
@@ -137,6 +144,7 @@ test('createHtmlArtboardDocument returns required schema fields', () => {
   assert.equal(document.version, 1)
   assert.equal(document.width, 720)
   assert.equal(document.height, 1280)
+  assert.equal(Array.isArray(document.textLayers), true)
   assert.equal(document.meta.provider, 'mock')
   assert.equal(document.executionGraph, null)
   assert.equal(document.renderFingerprint, null)
@@ -151,6 +159,7 @@ test('ensureHtmlArtboardDocument fills missing fields', () => {
   assert.equal(document.width, 720)
   assert.equal(document.height, 1280)
   assert.equal(Array.isArray(document.assets), true)
+  assert.equal(Array.isArray(document.textLayers), true)
   assert.equal(Array.isArray(document.history), true)
   assert.equal(Array.isArray(document.mutationLog), true)
 })
@@ -547,6 +556,125 @@ test('createSelectorForDataNode returns null for empty input', () => {
 
 test('createSelectorForDataNode escapes double quotes/backslashes', () => {
   assert.equal(createSelectorForDataNode('hero"\\title'), '[data-node="hero\\"\\\\title"]')
+})
+
+test('createHtmlArtboardTextLayersFromDocument creates layers from data-node text', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section><h1 data-node="headline">Title</h1><p data-node="subhead">Subtitle</p></section>'
+  })
+  const layers = createHtmlArtboardTextLayersFromDocument(document)
+
+  assert.equal(layers.length, 2)
+  assert.equal(layers[0].dataNode, 'headline')
+  assert.equal(layers[0].text, 'Title')
+  assert.equal(layers[1].dataNode, 'subhead')
+  assert.equal(layers[1].text, 'Subtitle')
+})
+
+test('createHtmlArtboardTextLayersFromDocument skips container data-node text', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section data-node="hero"><h1 data-node="headline">Title</h1><p data-node="subhead">Subtitle</p></section>'
+  })
+  const layers = createHtmlArtboardTextLayersFromDocument(document)
+
+  assert.equal(layers.length, 2)
+  assert.deepEqual(layers.map((layer) => layer.dataNode), ['headline', 'subhead'])
+})
+
+test('normalizeHtmlArtboardTextLayers normalizes numeric fields', () => {
+  const [layer] = normalizeHtmlArtboardTextLayers([
+    { id: 'layer:one', text: 'Text', x: '12', y: '24', w: '360', h: '40', fontSize: '30' }
+  ])
+
+  assert.equal(layer.x, 12)
+  assert.equal(layer.y, 24)
+  assert.equal(layer.w, 360)
+  assert.equal(layer.h, 40)
+  assert.equal(layer.fontSize, 30)
+})
+
+test('applyHtmlArtboardTextLayersToHtml updates matching data-node text', () => {
+  const html = '<section><h1 data-node="headline">Before</h1><p>Keep</p></section>'
+  const nextHtml = applyHtmlArtboardTextLayersToHtml(html, [
+    { id: 'layer:headline', dataNode: 'headline', text: 'After' }
+  ])
+
+  assert.equal(nextHtml, '<section><h1 data-node="headline">After</h1><p>Keep</p></section>')
+})
+
+test('applyHtmlArtboardTextLayersToHtml escapes text content', () => {
+  const html = '<section><h1 data-node="headline">Before</h1></section>'
+  const nextHtml = applyHtmlArtboardTextLayersToHtml(html, [
+    { id: 'layer:headline', dataNode: 'headline', text: 'A < B & C' }
+  ])
+
+  assert.equal(nextHtml, '<section><h1 data-node="headline">A &lt; B &amp; C</h1></section>')
+})
+
+test('applyHtmlArtboardTextLayersToHtml does not overwrite container data-node content', () => {
+  const html = '<section data-node="hero"><h1 data-node="headline">Before</h1></section>'
+  const nextHtml = applyHtmlArtboardTextLayersToHtml(html, [
+    { id: 'layer:hero', dataNode: 'hero', text: 'Container text' },
+    { id: 'layer:headline', dataNode: 'headline', text: 'After' }
+  ])
+
+  assert.equal(nextHtml, '<section data-node="hero"><h1 data-node="headline">After</h1></section>')
+})
+
+test('updateHtmlArtboardTextLayers stores layers and updates html', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section><h1 data-node="headline">Before</h1></section>'
+  })
+  const updated = updateHtmlArtboardTextLayers(document, [
+    { id: 'layer:headline', dataNode: 'headline', text: 'After', x: 10, y: 20, w: 320, h: 64 }
+  ])
+
+  assert.equal(updated.textLayers.length, 1)
+  assert.equal(updated.textLayers[0].text, 'After')
+  assert.equal(updated.html.includes('After'), true)
+})
+
+test('updateHtmlArtboardTextLayers records mutationLog', () => {
+  const document = createHtmlArtboardDocument()
+  const updated = updateHtmlArtboardTextLayers(document, [
+    { id: 'layer:headline', text: 'Layer', x: 10, y: 20, w: 320, h: 64 }
+  ])
+
+  assert.equal(updated.mutationLog.at(-1).type, 'text_layer_sync')
+  assert.equal(updated.mutationLog.at(-1).payload.nextTextLayers.length, 1)
+})
+
+test('updateHtmlArtboardTextLayers supports recordMutationLog false', () => {
+  const document = createHtmlArtboardDocument()
+  const updated = updateHtmlArtboardTextLayers(
+    document,
+    [{ id: 'layer:headline', text: 'Layer', x: 10, y: 20, w: 320, h: 64 }],
+    { recordMutationLog: false }
+  )
+
+  assert.equal(updated.mutationLog.length, 0)
+})
+
+test('updateHtmlArtboardTextLayers recalculates renderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = updateHtmlArtboardTextLayers(document, [
+    { id: 'layer:headline', text: 'Layer', x: 10, y: 20, w: 320, h: 64 }
+  ])
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+})
+
+test('updateHtmlArtboardTextLayers does not mutate input document', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section><h1 data-node="headline">Before</h1></section>'
+  })
+  const before = cloneHtmlArtboardDocument(document)
+
+  updateHtmlArtboardTextLayers(document, [
+    { id: 'layer:headline', dataNode: 'headline', text: 'After', x: 10, y: 20, w: 320, h: 64 }
+  ])
+
+  assert.deepEqual(document, before)
 })
 
 test('createFusionPatchPlaceholder returns required fields', () => {
@@ -2735,6 +2863,26 @@ test('applyHtmlArtboardMutation applies background_asset_attach', () => {
   assert.equal(updated.background.type, 'image')
   assert.equal(updated.background.backgroundAssetUrl, '/page-assets/page-1/background.png')
   assert.equal(updated.background.status, 'generated')
+})
+
+test('applyHtmlArtboardMutation applies text_layer_sync', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section><h1 data-node="headline">Before</h1></section>'
+  })
+  const nextTextLayers = [
+    { id: 'layer:headline', dataNode: 'headline', text: 'After', x: 12, y: 24, w: 320, h: 64 }
+  ]
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'text_layer_sync',
+    payload: {
+      nextHtml: '<section><h1 data-node="headline">After</h1></section>',
+      nextTextLayers
+    }
+  })
+
+  assert.equal(updated.html.includes('After'), true)
+  assert.equal(updated.textLayers.length, 1)
+  assert.equal(updated.textLayers[0].text, 'After')
 })
 
 test('applyHtmlArtboardMutation applies document_meta_update', () => {

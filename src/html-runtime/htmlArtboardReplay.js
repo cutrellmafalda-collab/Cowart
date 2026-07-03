@@ -14,6 +14,7 @@ const REPLAY_MUTATION_TYPES = new Set([
   'fusion_patch_mock_asset_generate',
   'fusion_patch_external_asset_attach',
   'background_asset_attach',
+  'text_layer_sync',
   'document_meta_update'
 ])
 
@@ -232,6 +233,14 @@ export function applyHtmlArtboardMutation(document, mutation, options = {}) {
           provider: typeof payload.provider === 'string' ? payload.provider : 'external-image-gen'
         }
       }
+    }
+  }
+
+  if (mutationType === 'text_layer_sync' && Array.isArray(payload.nextTextLayers)) {
+    nextDocument = {
+      ...nextDocument,
+      html: typeof payload.nextHtml === 'string' ? payload.nextHtml : nextDocument.html,
+      textLayers: deepClone(payload.nextTextLayers)
     }
   }
 

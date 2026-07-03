@@ -13,7 +13,8 @@ export const HTML_ARTBOARD_MUTATION_TYPES = [
   'fusion_patch_rename',
   'fusion_patch_mock_asset_generate',
   'fusion_patch_external_asset_attach',
-  'background_asset_attach'
+  'background_asset_attach',
+  'text_layer_sync'
 ]
 
 function isRecord(value) {
