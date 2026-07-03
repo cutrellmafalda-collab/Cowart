@@ -240,6 +240,31 @@ body {
   line-height: 1;
 }
 
+.cowart-html-background {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cowart-html-background-meta {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  color: var(--tl-color-text-2);
+  font-size: 11px;
+  line-height: 1.35;
+  background: var(--tl-color-muted-2);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-background-meta code {
+  overflow-wrap: anywhere;
+  color: var(--tl-color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+
 .cowart-html-preview-status {
   display: grid;
   gap: 4px;

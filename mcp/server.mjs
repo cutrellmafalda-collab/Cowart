@@ -20,6 +20,10 @@ import {
   summarizeHtmlArtboardFusionPatchGenerationRequests,
 } from "./htmlArtboardFusionPatchGenerationRequest.mjs";
 import {
+  createHtmlArtboardBackgroundGenerationRequests,
+  summarizeHtmlArtboardBackgroundGenerationRequests,
+} from "./htmlArtboardBackgroundGenerationRequest.mjs";
+import {
   applyHtmlArtboardDocumentToShapeRecord,
   createHtmlArtboardApplyPlan,
   summarizeHtmlArtboardApplyResult,
@@ -39,6 +43,11 @@ import {
   createHtmlArtboardFusionPatchImageAttachPlan,
   summarizeHtmlArtboardFusionPatchImageAttachResult,
 } from "./htmlArtboardFusionPatchImageAttach.mjs";
+import {
+  applyHtmlArtboardBackgroundImageAttachDocumentToShapeRecord,
+  createHtmlArtboardBackgroundImageAttachPlan,
+  summarizeHtmlArtboardBackgroundImageAttachResult,
+} from "./htmlArtboardBackgroundImageAttach.mjs";
 
 const SERVER_NAME = "Cowart MCP";
 const SERVER_VERSION = "0.1.1";
@@ -48,12 +57,16 @@ const TOOL_PROPOSE_HTML_ARTBOARD_EDIT = "propose_cowart_html_artboard_edit";
 const TOOL_PROPOSE_HTML_ARTBOARD_FUSION_PATCH = "propose_cowart_html_artboard_fusion_patch";
 const TOOL_GET_HTML_ARTBOARD_FUSION_PATCH_GENERATION_REQUEST =
   "get_cowart_html_artboard_fusion_patch_generation_request";
+const TOOL_GET_HTML_ARTBOARD_BACKGROUND_GENERATION_REQUEST =
+  "get_cowart_html_artboard_background_generation_request";
 const TOOL_APPLY_HTML_ARTBOARD_EDIT = "apply_cowart_html_artboard_edit";
 const TOOL_APPLY_HTML_ARTBOARD_FUSION_PATCH = "apply_cowart_html_artboard_fusion_patch";
 const TOOL_GENERATE_HTML_ARTBOARD_MOCK_FUSION_PATCH_ASSET =
   "generate_cowart_html_artboard_mock_fusion_patch_asset";
 const TOOL_ATTACH_HTML_ARTBOARD_FUSION_PATCH_IMAGE =
   "attach_cowart_html_artboard_fusion_patch_image";
+const TOOL_ATTACH_HTML_ARTBOARD_BACKGROUND_IMAGE =
+  "attach_cowart_html_artboard_background_image";
 const TOOL_INSERT_IMAGE = "insert_cowart_image";
 const PAGE_ID_PREFIX = "page:";
 const PAGE_ASSETS_ROUTE = "/page-assets/";
@@ -353,6 +366,10 @@ function isAllowedExternalFusionPatchImageMimeType(mimeType) {
   return mimeType === "image/png" || mimeType === "image/jpeg" || mimeType === "image/webp";
 }
 
+function isAllowedExternalHtmlArtboardImageMimeType(mimeType) {
+  return isAllowedExternalFusionPatchImageMimeType(mimeType);
+}
+
 function createExternalFusionPatchAssetDescriptor({
   fileName,
   pageId,
@@ -365,6 +382,25 @@ function createExternalFusionPatchAssetDescriptor({
   return {
     patchAssetId,
     patchAssetUrl: pageAssetUrl(pageId, fileName),
+    fileName,
+    relativePath: `pages/${pageDirName(pageId)}/assets/${fileName}`,
+    mimeType,
+    fileSize: sourceStat.size,
+  };
+}
+
+function createExternalBackgroundAssetDescriptor({
+  fileName,
+  pageId,
+  documentId,
+  sourceStat,
+  mimeType,
+}) {
+  const backgroundAssetId = `external-html-artboard-background-asset:${sanitizeIdPart(`${documentId}-${fileName}`)}`;
+
+  return {
+    backgroundAssetId,
+    backgroundAssetUrl: pageAssetUrl(pageId, fileName),
     fileName,
     relativePath: `pages/${pageDirName(pageId)}/assets/${fileName}`,
     mimeType,
@@ -811,6 +847,57 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_GET_HTML_ARTBOARD_BACKGROUND_GENERATION_REQUEST,
+      title: "Get Cowart HTML Artboard Background Generation Request",
+      description:
+        "Return read-only no-text background image generation request packages for selected Cowart HTML Artboards so an external Codex, ChatGPT, or skill can generate background assets.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          prompt: {
+            type: "string",
+            description: "Optional background generation prompt. It should request a no-text background.",
+          },
+          includeThumbnail: {
+            type: "boolean",
+            description: "Include the current HTML Artboard thumbnail data URL. Defaults to false.",
+          },
+          includeStandaloneHtml: {
+            type: "boolean",
+            description: "Include standalone safe preview HTML. Defaults to false.",
+          },
+          preferredOutputFormat: {
+            type: "string",
+            enum: ["png", "webp", "jpg", "jpeg"],
+            description: "Preferred external generated asset format. Defaults to png.",
+          },
+          transparentBackground: {
+            type: "boolean",
+            description: "Whether transparent background is preferred. Defaults to false for full-bleed backgrounds.",
+          },
+          outputScale: {
+            type: "number",
+            description: "Scale multiplier applied to the artboard size to suggest output dimensions. Defaults to 1.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_APPLY_HTML_ARTBOARD_EDIT,
       title: "Apply Cowart HTML Artboard Edit",
       description:
@@ -1133,6 +1220,98 @@ function toolDefinitions() {
       },
     },
     {
+      name: TOOL_ATTACH_HTML_ARTBOARD_BACKGROUND_IMAGE,
+      title: "Attach Cowart HTML Artboard Background Image",
+      description:
+        "Attach an already-generated local PNG, JPEG, or WebP image file as the selected Cowart HTML Artboard background. Defaults to dry-run and requires confirmApply=true to copy the asset and save.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectDir: {
+            type: "string",
+            description: "Absolute Cowart project directory. The tool reads <projectDir>/canvas/cowart-selection.json.",
+          },
+          canvasDir: {
+            type: "string",
+            description: "Absolute canvas directory. If provided, this takes precedence over projectDir.",
+          },
+          cowartUrl: {
+            type: "string",
+            description: "Running Cowart URL, for example http://127.0.0.1:43217.",
+          },
+          imagePath: {
+            type: "string",
+            description: "Absolute local PNG, JPEG, or WebP image file produced by an external image generator.",
+          },
+          fileName: {
+            type: "string",
+            description: "Optional destination filename under the page-local assets folder.",
+          },
+          provider: {
+            type: "string",
+            description: "External generator label stored on the background. Defaults to external-image-gen.",
+          },
+          prompt: {
+            type: "string",
+            description: "Optional prompt used to generate the background.",
+          },
+          fit: {
+            type: "string",
+            enum: ["cover", "contain", "fill"],
+            description: "How the background image should fit the artboard thumbnail. Defaults to cover.",
+          },
+          position: {
+            type: "string",
+            description: "Background position metadata. Defaults to center.",
+          },
+          generationRequest: {
+            type: "object",
+            description: "Optional generation request package to preserve with the background metadata.",
+            additionalProperties: true,
+          },
+          allowOverwrite: {
+            type: "boolean",
+            description: "Allow replacing an existing backgroundAssetUrl. Defaults to false.",
+          },
+          includeProposedDocument: {
+            type: "boolean",
+            description: "Include proposedDocument in structuredContent. Defaults to false.",
+          },
+          confirmApply: {
+            type: "boolean",
+            description: "Must be true to copy the generated image and save the selected HTML Artboard.",
+          },
+          expectedDocumentId: {
+            type: "string",
+            description: "Optional optimistic guard. If provided, it must match the current runtimeDocument id.",
+          },
+          expectedRenderFingerprint: {
+            type: "string",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument renderFingerprint.",
+          },
+          expectedMutationCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument mutationLog length.",
+          },
+          expectedFusionPatchCount: {
+            type: "number",
+            description:
+              "Optional optimistic guard. If provided, it must match the current runtimeDocument fusionPatches length.",
+          },
+        },
+        required: ["imagePath"],
+        additionalProperties: false,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    {
       name: TOOL_INSERT_IMAGE,
       title: "Insert Cowart Image",
       description:
@@ -1288,6 +1467,27 @@ async function handleToolCall(id, params) {
       requests.length === 0
         ? "No FusionPatch image generation requests."
         : summarizeHtmlArtboardFusionPatchGenerationRequests(requests);
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        count: requests.length,
+        requests,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_GET_HTML_ARTBOARD_BACKGROUND_GENERATION_REQUEST) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const requests = createHtmlArtboardBackgroundGenerationRequests(htmlArtboards, args);
+    const summary =
+      requests.length === 0
+        ? "No HTML Artboard background generation requests."
+        : summarizeHtmlArtboardBackgroundGenerationRequests(requests);
 
     sendResult(id, {
       content: [{ type: "text", text: summary }],
@@ -1856,6 +2056,197 @@ async function handleToolCall(id, params) {
       results.length === 0
         ? "No selected HTML Artboard."
         : results.map((result) => summarizeHtmlArtboardFusionPatchImageAttachResult(result)).join("\n");
+
+    sendResult(id, {
+      content: [{ type: "text", text: summary }],
+      structuredContent: {
+        selectionFile,
+        dryRun: !confirmApply || hasPreconditionFailure,
+        confirmApply,
+        count: results.length,
+        appliedCount,
+        saved,
+        preconditionFailed: hasPreconditionFailure,
+        reason: overallReason,
+        results,
+      },
+    });
+    return;
+  }
+
+  if (params?.name === TOOL_ATTACH_HTML_ARTBOARD_BACKGROUND_IMAGE) {
+    const args = params.arguments ?? {};
+    const { selection, selectionFile } = await readSelectionState(args);
+    const htmlArtboards = extractSelectedHtmlArtboards(selection);
+    const includeProposedDocument = args.includeProposedDocument === true;
+    const confirmApply = args.confirmApply === true;
+    const imagePath = nonEmptyString(args.imagePath);
+    let saved = false;
+    let appliedCount = 0;
+    let cowartUrl = null;
+    let snapshot = null;
+    let sourceImagePath = null;
+    let sourceStat = null;
+    let sourceMimeType = null;
+
+    if (htmlArtboards.length > 0) {
+      if (!imagePath) throw new Error("imagePath is required.");
+
+      sourceImagePath = pathResolve(imagePath);
+      sourceStat = await stat(sourceImagePath);
+      if (!sourceStat.isFile()) throw new Error(`imagePath is not a file: ${sourceImagePath}`);
+
+      sourceMimeType = mimeTypeForFile(sourceImagePath);
+      if (!isAllowedExternalHtmlArtboardImageMimeType(sourceMimeType)) {
+        throw new Error("imagePath must be a PNG, JPEG, or WebP image file.");
+      }
+
+      const loaded = await loadCanvasSnapshot(args);
+      cowartUrl = loaded.cowartUrl;
+      snapshot = loaded.snapshot;
+    }
+
+    const canvasDir = resolveCanvasDir(args);
+    const plannedResults = await Promise.all(
+      htmlArtboards.map(async (artboard) => {
+        const shapeRecord = snapshot?.store?.[artboard.shapeId];
+        const planArtboard =
+          shapeRecord?.meta?.cowartHtmlArtboard === true
+            ? {
+                ...artboard,
+                runtimeDocument: shapeRecord.meta.runtimeDocument,
+              }
+            : artboard;
+        let asset = null;
+        let targetFilePath = null;
+
+        if (shapeRecord?.meta?.cowartHtmlArtboard === true && sourceImagePath && sourceStat) {
+          const pageId = findPageIdForShape(snapshot.store, artboard.shapeId);
+          if (pageId) {
+            const assetsDir = join(canvasDir, "pages", pageDirName(pageId), "assets");
+            if (!isSafeChildPath(canvasDir, assetsDir)) {
+              throw new Error(`Unsafe page assets directory: ${assetsDir}`);
+            }
+            const requestedFileName = args.fileName || basename(sourceImagePath);
+            const { fileName, filePath } = await uniqueFilePath(assetsDir, requestedFileName);
+            targetFilePath = filePath;
+            asset = createExternalBackgroundAssetDescriptor({
+              fileName,
+              pageId,
+              documentId: planArtboard.runtimeDocument?.id ?? artboard.summary?.documentId,
+              sourceStat,
+              mimeType: sourceMimeType,
+            });
+          }
+        }
+
+        let plan = createHtmlArtboardBackgroundImageAttachPlan(planArtboard, args, { asset });
+
+        if (!shapeRecord) {
+          plan = {
+            ...plan,
+            canApply: false,
+            reason: `Missing shape record in canvas snapshot: ${artboard.shapeId}`,
+          };
+        } else if (shapeRecord.meta?.cowartHtmlArtboard !== true) {
+          plan = {
+            ...plan,
+            canApply: false,
+            reason: `Selected shape is not an HTML Artboard in canvas snapshot: ${artboard.shapeId}`,
+          };
+        } else if (!asset || !targetFilePath) {
+          plan = {
+            ...plan,
+            canApply: false,
+            reason: `Could not determine page-local asset path for ${artboard.shapeId}`,
+          };
+        }
+
+        return {
+          ...plan,
+          applied: false,
+          assetCopy: targetFilePath
+            ? {
+                sourceImagePath,
+                targetFilePath,
+              }
+            : null,
+        };
+      })
+    );
+
+    const hasPreconditionFailure = plannedResults.some((result) => result.preconditionFailed === true);
+    const overallReason = hasPreconditionFailure ? "One or more precondition checks failed" : null;
+    const applyResults =
+      confirmApply && hasPreconditionFailure
+        ? plannedResults.map((result) =>
+            result.preconditionFailed === true
+              ? result
+              : {
+                  ...result,
+                  canApply: false,
+                  reason: overallReason,
+                }
+          )
+        : await Promise.all(
+            plannedResults.map(async (result) => {
+              if (!confirmApply || result.canApply !== true) {
+                return result;
+              }
+
+              const shapeRecord = snapshot?.store?.[result.shapeId];
+              if (!shapeRecord) {
+                return {
+                  ...result,
+                  canApply: false,
+                  reason: `Missing shape record in canvas snapshot: ${result.shapeId}`,
+                };
+              }
+
+              if (!result.assetCopy?.targetFilePath || !result.assetCopy?.sourceImagePath) {
+                return {
+                  ...result,
+                  canApply: false,
+                  reason: `Missing external background copy target for ${result.shapeId}`,
+                };
+              }
+
+              await mkdir(dirname(result.assetCopy.targetFilePath), { recursive: true });
+              await copyFile(result.assetCopy.sourceImagePath, result.assetCopy.targetFilePath);
+              snapshot.store[result.shapeId] =
+                applyHtmlArtboardBackgroundImageAttachDocumentToShapeRecord(
+                  shapeRecord,
+                  result.proposedDocument
+                );
+              appliedCount += 1;
+
+              return {
+                ...result,
+                applied: true,
+                reason: "Applied",
+              };
+            })
+          );
+
+    const results = applyResults.map((result) => {
+      const { assetCopy: _assetCopy, ...publicResult } = result;
+      if (!includeProposedDocument) {
+        const { proposedDocument: _proposedDocument, ...compactResult } = publicResult;
+        return compactResult;
+      }
+
+      return publicResult;
+    });
+
+    if (confirmApply && !hasPreconditionFailure && appliedCount > 0) {
+      await saveCanvasSnapshot(cowartUrl, snapshot);
+      saved = true;
+    }
+
+    const summary =
+      results.length === 0
+        ? "No selected HTML Artboard."
+        : results.map((result) => summarizeHtmlArtboardBackgroundImageAttachResult(result)).join("\n");
 
     sendResult(id, {
       content: [{ type: "text", text: summary }],

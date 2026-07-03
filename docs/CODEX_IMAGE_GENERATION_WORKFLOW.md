@@ -4,6 +4,8 @@ This document describes the HTML Artboard FusionPatch image-generation bridge.
 
 Cowart does not call OpenAI, Gemini, or any image provider API directly. Cowart prepares a generation request package, an external executor such as Codex, ChatGPT, or an image-generation skill creates the image, and Cowart attaches the generated local image back to the selected FusionPatch through MCP.
 
+The same bridge also supports full-artboard background images. Cowart can prepare a no-text background generation request, an external executor creates the background, and Cowart attaches the local image as `runtimeDocument.background` without changing HTML or CSS.
+
 ## Workflow
 
 1. Open Cowart and select an HTML Artboard frame.
@@ -99,6 +101,42 @@ Requirements:
 15. In Cowart, verify Canvas Preview Status is stale.
 16. Click Refresh Canvas Preview.
 17. Confirm the canvas thumbnail updates.
+
+## Background Image Workflow
+
+Use this flow when the artboard needs a visual background layer but the HTML/CSS text must stay editable.
+
+1. Select an HTML Artboard frame.
+2. Call `get_cowart_html_artboard_background_generation_request`.
+3. Use the returned `suggestedImagePrompt` to generate a no-text background externally.
+4. Save the generated image as a local PNG, JPEG, or WebP.
+5. Call `attach_cowart_html_artboard_background_image` with:
+   - `imagePath`
+   - `provider`, for example `codex-image-gen`
+   - `generationRequest`
+   - `confirmApply: true`
+   - `expectedDocumentId`
+   - `expectedRenderFingerprint`
+   - `expectedMutationCount`
+   - `expectedFusionPatchCount`
+6. Confirm the MCP result has `saved: true` and `appliedCount >= 1`.
+7. Confirm `runtimeDocument.background` has:
+   - `type: "image"`
+   - `backgroundAssetId`
+   - `backgroundAssetUrl`
+   - `status: "generated"`
+   - `provider`
+8. Confirm `runtimeDocument.html` and `runtimeDocument.css` are unchanged.
+9. Confirm `mutationLog` contains `background_asset_attach`.
+10. Refresh Canvas Preview to see the background behind the HTML layer and FusionPatch overlays.
+
+This creates the compositor stack:
+
+```text
+background image
++ editable HTML/CSS layer
++ FusionPatch image/overlay layer
+```
 
 ## Failure Handling
 

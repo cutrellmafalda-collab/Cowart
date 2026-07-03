@@ -13,6 +13,7 @@ const REPLAY_MUTATION_TYPES = new Set([
   'fusion_patch_rename',
   'fusion_patch_mock_asset_generate',
   'fusion_patch_external_asset_attach',
+  'background_asset_attach',
   'document_meta_update'
 ])
 
@@ -205,6 +206,32 @@ export function applyHtmlArtboardMutation(document, mutation, options = {}) {
         status: 'generated',
         provider: typeof payload.provider === 'string' ? payload.provider : 'external-image-gen'
       })
+    }
+  }
+
+  if (mutationType === 'background_asset_attach') {
+    if (isRecord(payload.nextBackground)) {
+      nextDocument = {
+        ...nextDocument,
+        background: deepClone(payload.nextBackground)
+      }
+    } else if (typeof payload.backgroundAssetUrl === 'string') {
+      nextDocument = {
+        ...nextDocument,
+        background: {
+          ...(isRecord(nextDocument.background) ? deepClone(nextDocument.background) : {}),
+          type: 'image',
+          identity:
+            typeof payload.backgroundAssetId === 'string'
+              ? payload.backgroundAssetId
+              : payload.backgroundAssetUrl,
+          backgroundAssetId:
+            typeof payload.backgroundAssetId === 'string' ? payload.backgroundAssetId : null,
+          backgroundAssetUrl: payload.backgroundAssetUrl,
+          status: 'generated',
+          provider: typeof payload.provider === 'string' ? payload.provider : 'external-image-gen'
+        }
+      }
     }
   }
 

@@ -45,6 +45,10 @@ import {
   validateHtmlArtboardAiProviderResult
 } from '../src/html-runtime/htmlArtboardAiProvider.js'
 import {
+  attachExternalBackgroundImageToHtmlArtboard,
+  getHtmlArtboardBackgroundAssetUrl
+} from '../src/html-runtime/htmlArtboardBackground.js'
+import {
   createSelectorForDataNode,
   extractHtmlArtboardPatchTargets
 } from '../src/html-runtime/htmlArtboardPatchTargets.js'
@@ -842,6 +846,67 @@ test('thumbnail alt text includes HTML Artboard', () => {
   assert.equal(altText.includes('HTML Artboard'), true)
 })
 
+test('thumbnail svg includes gradient background fallback', () => {
+  const svg = createHtmlArtboardThumbnailSvg(
+    createHtmlArtboardDocument({
+      background: {
+        type: 'gradient',
+        colors: ['#111111', '#eeeeee']
+      }
+    })
+  )
+
+  assert.equal(svg.includes('linearGradient'), true)
+  assert.equal(svg.includes('#111111'), true)
+  assert.equal(svg.indexOf('<rect') < svg.indexOf('<foreignObject'), true)
+})
+
+test('thumbnail svg includes image background asset', () => {
+  const svg = createHtmlArtboardThumbnailSvg(
+    createHtmlArtboardDocument({
+      background: {
+        type: 'image',
+        backgroundAssetUrl: 'data:image/png;base64,background-data',
+        fit: 'cover'
+      }
+    })
+  )
+
+  assert.equal(svg.includes('data:image/png;base64,background-data'), true)
+  assert.equal(svg.indexOf('<image') < svg.indexOf('<foreignObject'), true)
+})
+
+test('thumbnail svg can inline external background asset urls', () => {
+  const svg = createHtmlArtboardThumbnailSvg(
+    createHtmlArtboardDocument({
+      background: {
+        type: 'image',
+        backgroundAssetUrl: '/page-assets/page/background.png'
+      }
+    }),
+    {
+      backgroundAssetUrlResolver: (url) =>
+        url === '/page-assets/page/background.png'
+          ? 'data:image/png;base64,inlined-background'
+          : url
+    }
+  )
+
+  assert.equal(svg.includes('data:image/png;base64,inlined-background'), true)
+  assert.equal(svg.includes('href="/page-assets/page/background.png"'), false)
+})
+
+test('getHtmlArtboardBackgroundAssetUrl reads background asset url', () => {
+  const document = createHtmlArtboardDocument({
+    background: {
+      type: 'image',
+      backgroundAssetUrl: '/page-assets/page/background.png'
+    }
+  })
+
+  assert.equal(getHtmlArtboardBackgroundAssetUrl(document), '/page-assets/page/background.png')
+})
+
 test('createHtmlArtboardFusionPatchOverlaySvg returns empty string when no patches', () => {
   const overlay = createHtmlArtboardFusionPatchOverlaySvg(createHtmlArtboardDocument())
 
@@ -1013,6 +1078,90 @@ test('thumbnail svg can inline external fusion patch asset urls', () => {
 
   assert.equal(svg.includes('data:image/png;base64,external-patch-data'), true)
   assert.equal(svg.includes('href="/page-assets/page/external-patch.png"'), false)
+})
+
+test('attachExternalBackgroundImageToHtmlArtboard attaches background asset', () => {
+  const document = createHtmlArtboardDocument()
+  const updated = attachExternalBackgroundImageToHtmlArtboard(
+    document,
+    {
+      backgroundAssetId: 'background:asset:test',
+      backgroundAssetUrl: '/page-assets/page/background.png',
+      fileName: 'background.png',
+      relativePath: 'pages/page/assets/background.png',
+      mimeType: 'image/png',
+      fileSize: 128
+    },
+    { provider: 'codex-image-gen', prompt: 'No-text coffee poster background' }
+  )
+
+  assert.equal(updated.background.type, 'image')
+  assert.equal(updated.background.backgroundAssetId, 'background:asset:test')
+  assert.equal(updated.background.backgroundAssetUrl, '/page-assets/page/background.png')
+  assert.equal(updated.background.provider, 'codex-image-gen')
+  assert.equal(updated.background.status, 'generated')
+})
+
+test('attachExternalBackgroundImageToHtmlArtboard preserves html and css', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section>Keep HTML</section>',
+    css: 'section { color: black; }'
+  })
+  const updated = attachExternalBackgroundImageToHtmlArtboard(document, {
+    backgroundAssetId: 'background:asset:preserve',
+    backgroundAssetUrl: '/page-assets/page/background.png'
+  })
+
+  assert.equal(updated.html, document.html)
+  assert.equal(updated.css, document.css)
+})
+
+test('attachExternalBackgroundImageToHtmlArtboard records mutationLog', () => {
+  const updated = attachExternalBackgroundImageToHtmlArtboard(createHtmlArtboardDocument(), {
+    backgroundAssetId: 'background:asset:mutation',
+    backgroundAssetUrl: '/page-assets/page/background.png'
+  })
+  const mutation = updated.mutationLog.at(-1)
+
+  assert.equal(mutation.type, 'background_asset_attach')
+  assert.equal(mutation.payload.backgroundAssetUrl, '/page-assets/page/background.png')
+  assert.equal(mutation.meta.source, 'mcp-html-artboard-background-image-attach')
+})
+
+test('attachExternalBackgroundImageToHtmlArtboard can skip mutationLog', () => {
+  const updated = attachExternalBackgroundImageToHtmlArtboard(
+    createHtmlArtboardDocument(),
+    {
+      backgroundAssetId: 'background:asset:no-log',
+      backgroundAssetUrl: '/page-assets/page/background.png'
+    },
+    {},
+    { recordMutationLog: false }
+  )
+
+  assert.equal(updated.mutationLog.length, 0)
+})
+
+test('attachExternalBackgroundImageToHtmlArtboard recalculates renderFingerprint', () => {
+  const document = withRenderFingerprint(createHtmlArtboardDocument())
+  const updated = attachExternalBackgroundImageToHtmlArtboard(document, {
+    backgroundAssetId: 'background:asset:fingerprint',
+    backgroundAssetUrl: '/page-assets/page/background.png'
+  })
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+})
+
+test('attachExternalBackgroundImageToHtmlArtboard does not mutate input', () => {
+  const document = createHtmlArtboardDocument()
+  const before = JSON.stringify(document)
+
+  attachExternalBackgroundImageToHtmlArtboard(document, {
+    backgroundAssetId: 'background:asset:immutable',
+    backgroundAssetUrl: '/page-assets/page/background.png'
+  })
+
+  assert.equal(JSON.stringify(document), before)
 })
 
 test('createHtmlArtboardPreviewMeta returns cowartHtmlArtboardPreview true', () => {
@@ -2537,6 +2686,28 @@ test('applyHtmlArtboardMutation applies fusion_patch_external_asset_attach', () 
   assert.equal(updated.fusionPatches[0].patchAssetId, 'external-fusion-patch-asset:replay')
   assert.equal(updated.fusionPatches[0].patchAssetUrl, '/page-assets/page-1/replay.png')
   assert.equal(updated.fusionPatches[0].status, 'generated')
+})
+
+test('applyHtmlArtboardMutation applies background_asset_attach', () => {
+  const document = createHtmlArtboardDocument()
+  const nextBackground = {
+    type: 'image',
+    identity: 'background:replay',
+    backgroundAssetId: 'background:replay',
+    backgroundAssetUrl: '/page-assets/page-1/background.png',
+    status: 'generated',
+    provider: 'external-image-gen'
+  }
+  const updated = applyHtmlArtboardMutation(document, {
+    type: 'background_asset_attach',
+    payload: {
+      nextBackground
+    }
+  })
+
+  assert.equal(updated.background.type, 'image')
+  assert.equal(updated.background.backgroundAssetUrl, '/page-assets/page-1/background.png')
+  assert.equal(updated.background.status, 'generated')
 })
 
 test('applyHtmlArtboardMutation applies document_meta_update', () => {

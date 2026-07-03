@@ -58,6 +58,70 @@ function resolvePatchAssetUrl(patchAssetUrl, options) {
   return patchAssetUrl
 }
 
+function resolveBackgroundAssetUrl(backgroundAssetUrl, options) {
+  if (typeof backgroundAssetUrl !== 'string' || backgroundAssetUrl.length === 0) return ''
+
+  if (typeof options.backgroundAssetUrlResolver === 'function') {
+    const resolvedUrl = options.backgroundAssetUrlResolver(backgroundAssetUrl)
+    if (typeof resolvedUrl === 'string' && resolvedUrl.length > 0) return resolvedUrl
+  }
+
+  return backgroundAssetUrl
+}
+
+function getBackgroundAssetUrl(background) {
+  if (!isRecord(background)) return ''
+
+  return (
+    [background.backgroundAssetUrl, background.assetUrl, background.url, background.src].find(
+      (value) => typeof value === 'string' && value.length > 0
+    ) ?? ''
+  )
+}
+
+function createBackgroundGradientSvg(background, width, height) {
+  if (!Array.isArray(background?.colors) || background.colors.length === 0) {
+    return `  <rect x="0" y="0" width="${width}" height="${height}" fill="#fff" />`
+  }
+
+  const colors = background.colors
+    .filter((color) => typeof color === 'string' && color.length > 0)
+    .slice(0, 8)
+
+  if (colors.length === 0) {
+    return `  <rect x="0" y="0" width="${width}" height="${height}" fill="#fff" />`
+  }
+
+  const stops = colors
+    .map((color, index) => {
+      const offset = colors.length === 1 ? 0 : Math.round((index / (colors.length - 1)) * 100)
+      return `      <stop offset="${offset}%" stop-color="${escapeAttribute(color)}" />`
+    })
+    .join('\n')
+
+  return `  <defs>
+    <linearGradient id="cowart-html-artboard-thumbnail-background" x1="0%" y1="0%" x2="100%" y2="100%">
+${stops}
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="${width}" height="${height}" fill="url(#cowart-html-artboard-thumbnail-background)" />`
+}
+
+function createThumbnailBackgroundSvg(document, width, height, options) {
+  const background = isRecord(document.background) ? document.background : {}
+  const backgroundAssetUrl = getBackgroundAssetUrl(background)
+
+  if (backgroundAssetUrl) {
+    const href = escapeAttribute(resolveBackgroundAssetUrl(backgroundAssetUrl, options))
+    const preserveAspectRatio = background.fit === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'
+
+    return `  <rect x="0" y="0" width="${width}" height="${height}" fill="#fff" />
+  <image href="${href}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="${preserveAspectRatio}" />`
+  }
+
+  return createBackgroundGradientSvg(background, width, height)
+}
+
 function createGeneratedPatchAssetOverlay(patch, region, options) {
   if (typeof patch.patchAssetUrl !== 'string' || patch.patchAssetUrl.length === 0) {
     return ''
@@ -90,7 +154,7 @@ body,
 
 .cowart-html-artboard-thumbnail {
   overflow: hidden;
-  background: #fff;
+  background: transparent;
 }`
 }
 
@@ -133,9 +197,11 @@ export function createHtmlArtboardThumbnailSvg(document, options = {}) {
   const normalizedDocument = ensureHtmlArtboardDocument(document)
   const width = safeDimension(normalizedDocument.width, 720)
   const height = safeDimension(normalizedDocument.height, 1280)
+  const backgroundSvg = createThumbnailBackgroundSvg(normalizedDocument, width, height, options)
   const fusionPatchOverlaySvg = createHtmlArtboardFusionPatchOverlaySvg(document, options)
 
   return `<svg xmlns="${SVG_XMLNS}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(createHtmlArtboardThumbnailAltText(normalizedDocument))}">
+${backgroundSvg}
   <foreignObject x="0" y="0" width="${width}" height="${height}">
     <div xmlns="${XHTML_XMLNS}" class="cowart-html-artboard-thumbnail">
       <style>

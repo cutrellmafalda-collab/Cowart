@@ -359,7 +359,22 @@ function blobToDataUrl(blob) {
   })
 }
 
-async function createThumbnailPatchAssetUrlResolver(runtimeDocument) {
+function getHtmlArtboardBackgroundAssetUrl(runtimeDocument) {
+  const background = runtimeDocument?.background
+
+  if (!background || typeof background !== 'object') return null
+
+  return (
+    [
+      background.backgroundAssetUrl,
+      background.assetUrl,
+      background.url,
+      background.src
+    ].find((url) => typeof url === 'string' && url.length > 0) ?? null
+  )
+}
+
+async function createThumbnailAssetUrlResolver(runtimeDocument) {
   const patchAssetUrls = [
     ...new Set(
       (Array.isArray(runtimeDocument.fusionPatches) ? runtimeDocument.fusionPatches : [])
@@ -367,10 +382,21 @@ async function createThumbnailPatchAssetUrlResolver(runtimeDocument) {
         .filter((url) => typeof url === 'string' && url.length > 0 && !url.startsWith('data:'))
     )
   ]
+  const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
+  const assetUrls = [
+    ...new Set(
+      [
+        ...patchAssetUrls,
+        typeof backgroundAssetUrl === 'string' && !backgroundAssetUrl.startsWith('data:')
+          ? backgroundAssetUrl
+          : null
+      ].filter(Boolean)
+    )
+  ]
   const resolvedUrls = new Map()
 
   await Promise.all(
-    patchAssetUrls.map(async (url) => {
+    assetUrls.map(async (url) => {
       try {
         const response = await fetch(url, { cache: 'no-store' })
         if (!response.ok) return
@@ -395,9 +421,10 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     width: size.w,
     height: size.h
   }
-  const patchAssetUrlResolver = await createThumbnailPatchAssetUrlResolver(runtimeDocument)
+  const assetUrlResolver = await createThumbnailAssetUrlResolver(runtimeDocument)
   const dataUrl = createHtmlArtboardThumbnailDataUrl(thumbnailDocument, {
-    patchAssetUrlResolver
+    patchAssetUrlResolver: assetUrlResolver,
+    backgroundAssetUrlResolver: assetUrlResolver
   })
   const altText = createHtmlArtboardThumbnailAltText(thumbnailDocument)
   const existingPreviewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
@@ -905,6 +932,7 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
+      <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
       <CowartHtmlArtboardSourceControls sourceSnapshot={sourceSnapshot} />
       <CowartHtmlArtboardEditorControls
         editor={editor}
@@ -919,6 +947,31 @@ function CowartHtmlArtboardPreviewControls() {
       />
       <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
     </div>
+  )
+}
+
+function CowartHtmlArtboardBackgroundSummary({ runtimeDocument }) {
+  const background = runtimeDocument.background ?? {}
+  const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
+  const type = typeof background.type === 'string' && background.type ? background.type : 'unknown'
+  const status =
+    typeof background.status === 'string' && background.status
+      ? background.status
+      : backgroundAssetUrl
+        ? 'attached'
+        : 'metadata'
+
+  return (
+    <section className="cowart-html-background" aria-label="HTML Artboard background">
+      <div className="cowart-html-preview-heading">
+        <span>Background</span>
+        <span>{status}</span>
+      </div>
+      <div className="cowart-html-background-meta">
+        <span>Type: {type}</span>
+        {backgroundAssetUrl ? <code>{backgroundAssetUrl}</code> : <span>No attached background image.</span>}
+      </div>
+    </section>
   )
 }
 

@@ -389,3 +389,16 @@ Goal:
 - Cowart should accept generated assets through guarded MCP attach tools.
 - Real provider credentials must stay outside Cowart.
 - Mock provider remains the default.
+
+## 19. HTML Compositor Direction
+
+The external image bridge now applies to both FusionPatch assets and full-artboard backgrounds.
+
+- Background image requests are read-only MCP packages.
+- Background images are produced by Codex, ChatGPT, or a skill outside Cowart.
+- Background attach writes only `runtimeDocument.background` and `background_asset_attach`.
+- HTML and CSS remain editable source layers.
+- FusionPatch assets remain local overlay layers.
+- Canvas preview composes background + HTML/CSS + FusionPatch overlays.
+
+This supports the Cowart HTML Compositor direction without putting provider credentials or direct provider calls inside Cowart.
