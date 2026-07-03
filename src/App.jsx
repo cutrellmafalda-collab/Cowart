@@ -336,6 +336,20 @@ function findHtmlArtboardPreviewShape(editor, sourceShapeId) {
   })[0]
 }
 
+function resolveHtmlArtboardSelection(editor, shape) {
+  const runtimeDocument = cowartShapeToHtmlArtboard(shape)
+  if (runtimeDocument) return { runtimeDocument, shape }
+
+  if (shape?.type !== 'image' || shape?.meta?.cowartHtmlArtboardPreview !== true) return null
+
+  const sourceShapeId = shape.meta.sourceHtmlArtboardShapeId
+  if (typeof sourceShapeId !== 'string') return null
+
+  const sourceShape = editor.getShape(sourceShapeId)
+  const sourceRuntimeDocument = cowartShapeToHtmlArtboard(sourceShape)
+  return sourceRuntimeDocument ? { runtimeDocument: sourceRuntimeDocument, shape: sourceShape } : null
+}
+
 function createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument) {
   return {
     cowartHtmlArtboardPreviewVersion: HTML_ARTBOARD_PREVIEW_VERSION,
@@ -684,7 +698,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
         y: selectedShape.y,
         rotation: selectedShape.rotation ?? 0,
         parentId: selectedShape.parentId,
-        isLocked: true,
+        isLocked: false,
         opacity: 1,
         props: {
           ...existingPreviewShape.props,
@@ -704,7 +718,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
       y: selectedShape.y,
       rotation: selectedShape.rotation ?? 0,
       parentId: selectedShape.parentId,
-      isLocked: true,
+      isLocked: false,
       opacity: 1,
       props: imageProps,
       meta: previewMeta
@@ -1102,8 +1116,7 @@ function CowartHtmlArtboardPreviewControls() {
       if (selectedShapeIds.length !== 1) return null
 
       const shape = editor.getShape(selectedShapeIds[0])
-      const runtimeDocument = cowartShapeToHtmlArtboard(shape)
-      return runtimeDocument ? { runtimeDocument, shape } : null
+      return resolveHtmlArtboardSelection(editor, shape)
     },
     [editor]
   )
@@ -2246,10 +2259,12 @@ function CowartToolbar(props) {
 function getCowartSelection(editor) {
   const selectedShapeIds = editor.getSelectedShapeIds()
   return selectedShapeIds.map((id) => {
-    const shape = editor.getShape(id)
+    const selectedShape = editor.getShape(id)
+    const resolvedHtmlArtboard = resolveHtmlArtboardSelection(editor, selectedShape)
+    const shape = resolvedHtmlArtboard?.shape ?? selectedShape
     const asset = shape?.props?.assetId ? editor.getAsset(shape.props.assetId) : null
     return {
-      id,
+      id: shape?.id ?? id,
       type: shape?.type ?? null,
       parentId: shape?.parentId ?? null,
       x: shape?.x ?? null,
