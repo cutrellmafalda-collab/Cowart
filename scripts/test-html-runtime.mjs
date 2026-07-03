@@ -528,6 +528,17 @@ test('extractHtmlArtboardPatchTargets supports single-quoted data-node', () => {
   assert.equal(targets[0].selector, '[data-node="single-quote"]')
 })
 
+test('extractHtmlArtboardPatchTargets supports unquoted data-node', () => {
+  const targets = extractHtmlArtboardPatchTargets({
+    html: '<h1 data-node=headline>Unquoted target</h1>'
+  })
+
+  assert.equal(targets.length, 1)
+  assert.equal(targets[0].dataNode, 'headline')
+  assert.equal(targets[0].sourceText, 'Unquoted target')
+  assert.equal(targets[0].selector, '[data-node="headline"]')
+})
+
 test('extractHtmlArtboardPatchTargets returns [] when no data-node exists', () => {
   const targets = extractHtmlArtboardPatchTargets({
     html: '<section><h1>No target</h1></section>'

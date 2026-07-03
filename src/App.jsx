@@ -477,17 +477,6 @@ function getValidFusionPatchRegion(region) {
   return { x, y, w, h }
 }
 
-function getFusionPatchLabel(patch) {
-  return (
-    [
-      patch?.name,
-      patch?.sourceText,
-      patch?.prompt,
-      patch?.id
-    ].find((value) => typeof value === 'string' && value.trim().length > 0) ?? 'Fusion Patch'
-  )
-}
-
 function drawPreviewTextFallback(context, runtimeDocument, width, height) {
   const text = extractPreviewTextFromHtml(runtimeDocument.html)
   if (!text) return
@@ -535,36 +524,19 @@ async function drawFusionPatchPreview(context, patch, assetUrlResolver) {
       ? assetUrlResolver(patch.patchAssetUrl)
       : null
   const patchImage = patchAssetUrl ? await loadPreviewImage(patchAssetUrl) : null
+  const isMockPatch =
+    patch?.provider === 'mock' ||
+    patch?.status === 'placeholder' ||
+    patch?.status === 'mock-generated'
 
-  if (patchImage) {
+  if (patchImage && !isMockPatch) {
+    context.save()
+    context.shadowColor = 'rgba(15, 23, 42, 0.18)'
+    context.shadowBlur = 18
+    context.shadowOffsetY = 8
     drawCoverImage(context, patchImage, region.x, region.y, region.w, region.h)
-    context.fillStyle = 'rgba(17, 24, 39, 0.62)'
-    context.fillRect(region.x, region.y + region.h - 28, region.w, 28)
-    context.fillStyle = '#ffffff'
-    context.font = '700 16px Inter, ui-sans-serif, system-ui, sans-serif'
-    context.textAlign = 'left'
-    context.textBaseline = 'middle'
-    context.fillText('generated', region.x + 10, region.y + region.h - 14)
-  } else {
-    context.fillStyle = 'rgba(250, 204, 21, 0.16)'
-    context.fillRect(region.x, region.y, region.w, region.h)
+    context.restore()
   }
-
-  context.strokeStyle = '#facc15'
-  context.lineWidth = 3
-  context.setLineDash([10, 8])
-  context.strokeRect(region.x, region.y, region.w, region.h)
-  context.setLineDash([])
-
-  const label = getFusionPatchLabel(patch)
-  context.font = '700 18px Inter, ui-sans-serif, system-ui, sans-serif'
-  const labelWidth = Math.min(region.w, context.measureText(label).width + 20)
-  context.fillStyle = 'rgba(17, 24, 39, 0.78)'
-  context.fillRect(region.x, Math.max(0, region.y - 28), labelWidth, 28)
-  context.fillStyle = '#fef3c7'
-  context.textAlign = 'left'
-  context.textBaseline = 'middle'
-  context.fillText(label, region.x + 10, Math.max(14, region.y - 14), Math.max(12, labelWidth - 20))
 
   context.restore()
 }
@@ -624,7 +596,7 @@ async function createThumbnailAssetUrlResolver(runtimeDocument) {
   return (url) => resolvedUrls.get(url) ?? url
 }
 
-async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetUrlResolver) {
+async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetUrlResolver, options = {}) {
   const width = Math.max(1, Math.round(runtimeDocument.width))
   const height = Math.max(1, Math.round(runtimeDocument.height))
   const canvas = document.createElement('canvas')
@@ -648,7 +620,7 @@ async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetU
     drawCoverImage(context, backgroundImage, 0, 0, width, height)
   }
 
-  if (!hasHtmlArtboardTextLayers(runtimeDocument)) {
+  if (!options.omitTextFallback && !hasHtmlArtboardTextLayers(runtimeDocument)) {
     drawPreviewTextFallback(context, runtimeDocument, width, height)
   }
 
@@ -670,7 +642,13 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     height: size.h
   }
   const assetUrlResolver = await createThumbnailAssetUrlResolver(runtimeDocument)
-  const dataUrl = await createHtmlArtboardCanvasPreviewPngDataUrl(thumbnailDocument, assetUrlResolver)
+  const dataUrl = await createHtmlArtboardCanvasPreviewPngDataUrl(
+    thumbnailDocument,
+    assetUrlResolver,
+    {
+      omitTextFallback: findHtmlArtboardTextLayerShapes(editor, selectedShape.id).length > 0
+    }
+  )
   const altText = createHtmlArtboardThumbnailAltText(thumbnailDocument)
   const existingPreviewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
   const assetId =

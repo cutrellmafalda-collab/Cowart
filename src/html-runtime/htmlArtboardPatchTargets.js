@@ -1,7 +1,7 @@
 import { ensureHtmlArtboardDocument } from './htmlCanvasDocument.js'
 
 const DATA_NODE_OPEN_TAG_PATTERN =
-  /<([a-zA-Z][\w:-]*)([^>]*\sdata-node\s*=\s*(["'])(.*?)\3[^>]*)>/g
+  /<([a-zA-Z][\w:-]*)([^>]*\sdata-node\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))[^>]*)>/g
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -60,7 +60,8 @@ export function extractHtmlArtboardPatchTargets(document) {
   const targets = []
 
   for (const match of runtimeDocument.html.matchAll(DATA_NODE_OPEN_TAG_PATTERN)) {
-    const [openTag, tagName, , , dataNode] = match
+    const [openTag, tagName, , doubleQuotedDataNode, singleQuotedDataNode, unquotedDataNode] = match
+    const dataNode = doubleQuotedDataNode ?? singleQuotedDataNode ?? unquotedDataNode ?? ''
     const normalizedDataNode = dataNode.trim()
     const selector = createSelectorForDataNode(normalizedDataNode)
     if (!selector) continue
