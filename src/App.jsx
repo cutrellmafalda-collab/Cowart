@@ -71,10 +71,7 @@ import {
   createHtmlArtboardExportFileName
 } from './html-runtime/htmlArtboardExport.js'
 import { createHtmlArtboardSourceSnapshot } from './html-runtime/htmlArtboardSource.js'
-import {
-  createHtmlArtboardThumbnailAltText,
-  createHtmlArtboardThumbnailDataUrl
-} from './html-runtime/htmlArtboardThumbnail.js'
+import { createHtmlArtboardThumbnailAltText } from './html-runtime/htmlArtboardThumbnail.js'
 import {
   compareHtmlArtboardPreviewFreshness,
   createHtmlArtboardPreviewMeta,
@@ -359,6 +356,179 @@ function blobToDataUrl(blob) {
   })
 }
 
+function loadPreviewImage(src) {
+  if (typeof src !== 'string' || src.length === 0) return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => resolve(null)
+    image.src = src
+  })
+}
+
+function drawCoverImage(context, image, x, y, width, height) {
+  if (!image || width <= 0 || height <= 0) return
+
+  const imageWidth = image.naturalWidth || image.width
+  const imageHeight = image.naturalHeight || image.height
+  if (!imageWidth || !imageHeight) return
+
+  const scale = Math.max(width / imageWidth, height / imageHeight)
+  const scaledWidth = imageWidth * scale
+  const scaledHeight = imageHeight * scale
+  const offsetX = x + (width - scaledWidth) / 2
+  const offsetY = y + (height - scaledHeight) / 2
+  context.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight)
+}
+
+function drawRoundRect(context, x, y, width, height, radius) {
+  const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2))
+  context.beginPath()
+  context.moveTo(x + safeRadius, y)
+  context.lineTo(x + width - safeRadius, y)
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius)
+  context.lineTo(x + width, y + height - safeRadius)
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height)
+  context.lineTo(x + safeRadius, y + height)
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius)
+  context.lineTo(x, y + safeRadius)
+  context.quadraticCurveTo(x, y, x + safeRadius, y)
+  context.closePath()
+}
+
+function extractPreviewTextFromHtml(html) {
+  const template = document.createElement('template')
+  template.innerHTML = typeof html === 'string' ? html : ''
+  template.content.querySelectorAll('script, style').forEach((node) => node.remove())
+  return (template.content.textContent ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function createPreviewTextLines(context, text, maxWidth, maxLines) {
+  const source = String(text ?? '').trim()
+  if (!source) return []
+
+  const lines = []
+  let current = ''
+
+  for (const char of source) {
+    const next = current + char
+    if (current && context.measureText(next).width > maxWidth) {
+      lines.push(current.trim())
+      current = char
+      if (lines.length >= maxLines) break
+    } else {
+      current = next
+    }
+  }
+
+  if (lines.length < maxLines && current.trim()) lines.push(current.trim())
+  return lines.slice(0, maxLines)
+}
+
+function getValidFusionPatchRegion(region) {
+  const x = Number(region?.x)
+  const y = Number(region?.y)
+  const w = Number(region?.w)
+  const h = Number(region?.h)
+
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null
+
+  return { x, y, w, h }
+}
+
+function getFusionPatchLabel(patch) {
+  return (
+    [
+      patch?.name,
+      patch?.sourceText,
+      patch?.prompt,
+      patch?.id
+    ].find((value) => typeof value === 'string' && value.trim().length > 0) ?? 'Fusion Patch'
+  )
+}
+
+function drawPreviewTextFallback(context, runtimeDocument, width, height) {
+  const text = extractPreviewTextFromHtml(runtimeDocument.html)
+  if (!text) return
+
+  const fontSize = Math.max(22, Math.min(64, Math.round(width / 12)))
+  const lineHeight = Math.round(fontSize * 1.15)
+  const panelX = Math.round(width * 0.08)
+  const panelWidth = Math.round(width * 0.84)
+  context.font = `800 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  const lines = createPreviewTextLines(context, text, panelWidth - 48, 4)
+  if (lines.length === 0) return
+
+  const panelHeight = lines.length * lineHeight + lineHeight * 1.2
+  const panelY = Math.max(24, Math.round(height * 0.43 - panelHeight / 2))
+  drawRoundRect(context, panelX, panelY, panelWidth, panelHeight, 18)
+  context.fillStyle = 'rgba(255, 255, 255, 0.52)'
+  context.fill()
+
+  lines.forEach((line, index) => {
+    const y = panelY + lineHeight * 0.7 + index * lineHeight + fontSize / 2
+    context.lineWidth = 8
+    context.strokeStyle = 'rgba(255, 255, 255, 0.92)'
+    context.fillStyle = '#111827'
+    context.strokeText(line, Math.round(width / 2), y)
+    context.fillText(line, Math.round(width / 2), y)
+  })
+}
+
+async function drawFusionPatchPreview(context, patch, assetUrlResolver) {
+  const region = getValidFusionPatchRegion(patch?.region)
+  if (!region || patch?.visible === false) return
+
+  const opacity =
+    typeof patch.opacity === 'number' && Number.isFinite(patch.opacity)
+      ? Math.max(0.15, Math.min(1, patch.opacity))
+      : 1
+
+  context.save()
+  context.globalAlpha = opacity
+
+  const patchAssetUrl =
+    typeof patch.patchAssetUrl === 'string' && patch.patchAssetUrl.length > 0
+      ? assetUrlResolver(patch.patchAssetUrl)
+      : null
+  const patchImage = patchAssetUrl ? await loadPreviewImage(patchAssetUrl) : null
+
+  if (patchImage) {
+    drawCoverImage(context, patchImage, region.x, region.y, region.w, region.h)
+    context.fillStyle = 'rgba(17, 24, 39, 0.62)'
+    context.fillRect(region.x, region.y + region.h - 28, region.w, 28)
+    context.fillStyle = '#ffffff'
+    context.font = '700 16px Inter, ui-sans-serif, system-ui, sans-serif'
+    context.textAlign = 'left'
+    context.textBaseline = 'middle'
+    context.fillText('generated', region.x + 10, region.y + region.h - 14)
+  } else {
+    context.fillStyle = 'rgba(250, 204, 21, 0.16)'
+    context.fillRect(region.x, region.y, region.w, region.h)
+  }
+
+  context.strokeStyle = '#facc15'
+  context.lineWidth = 3
+  context.setLineDash([10, 8])
+  context.strokeRect(region.x, region.y, region.w, region.h)
+  context.setLineDash([])
+
+  const label = getFusionPatchLabel(patch)
+  context.font = '700 18px Inter, ui-sans-serif, system-ui, sans-serif'
+  const labelWidth = Math.min(region.w, context.measureText(label).width + 20)
+  context.fillStyle = 'rgba(17, 24, 39, 0.78)'
+  context.fillRect(region.x, Math.max(0, region.y - 28), labelWidth, 28)
+  context.fillStyle = '#fef3c7'
+  context.textAlign = 'left'
+  context.textBaseline = 'middle'
+  context.fillText(label, region.x + 10, Math.max(14, region.y - 14), Math.max(12, labelWidth - 20))
+
+  context.restore()
+}
+
 function getHtmlArtboardBackgroundAssetUrl(runtimeDocument) {
   const background = runtimeDocument?.background
 
@@ -414,6 +584,42 @@ async function createThumbnailAssetUrlResolver(runtimeDocument) {
   return (url) => resolvedUrls.get(url) ?? url
 }
 
+async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetUrlResolver) {
+  const width = Math.max(1, Math.round(runtimeDocument.width))
+  const height = Math.max(1, Math.round(runtimeDocument.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext('2d')
+  const gradient = context.createLinearGradient(0, 0, width, height)
+  gradient.addColorStop(0, '#f4f7fb')
+  gradient.addColorStop(0.5, '#d8e7f0')
+  gradient.addColorStop(1, '#f6e6d9')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, width, height)
+
+  const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
+  const backgroundImage =
+    typeof backgroundAssetUrl === 'string'
+      ? await loadPreviewImage(assetUrlResolver(backgroundAssetUrl))
+      : null
+  if (backgroundImage) {
+    drawCoverImage(context, backgroundImage, 0, 0, width, height)
+  }
+
+  drawPreviewTextFallback(context, runtimeDocument, width, height)
+
+  const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
+    ? runtimeDocument.fusionPatches
+    : []
+  for (const patch of fusionPatches) {
+    await drawFusionPatchPreview(context, patch, assetUrlResolver)
+  }
+
+  return canvas.toDataURL('image/png')
+}
+
 async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument) {
   const size = getHtmlArtboardPreviewSize(runtimeDocument, selectedShape)
   const thumbnailDocument = {
@@ -422,10 +628,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     height: size.h
   }
   const assetUrlResolver = await createThumbnailAssetUrlResolver(runtimeDocument)
-  const dataUrl = createHtmlArtboardThumbnailDataUrl(thumbnailDocument, {
-    patchAssetUrlResolver: assetUrlResolver,
-    backgroundAssetUrlResolver: assetUrlResolver
-  })
+  const dataUrl = await createHtmlArtboardCanvasPreviewPngDataUrl(thumbnailDocument, assetUrlResolver)
   const altText = createHtmlArtboardThumbnailAltText(thumbnailDocument)
   const existingPreviewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
   const assetId =
@@ -436,12 +639,12 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     typeName: 'asset',
     type: 'image',
     props: {
-      name: `${HTML_ARTBOARD_TOOL_LABEL} Preview.svg`,
+      name: `${HTML_ARTBOARD_TOOL_LABEL} Preview.png`,
       src: dataUrl,
       w: size.w,
       h: size.h,
       fileSize: dataUrl.length,
-      mimeType: 'image/svg+xml',
+      mimeType: 'image/png',
       isAnimated: false
     },
     meta: previewMeta

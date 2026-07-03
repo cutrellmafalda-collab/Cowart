@@ -158,6 +158,81 @@ body,
 }`
 }
 
+function stripHtmlTags(value) {
+  return String(value ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function decodeBasicHtmlEntities(value) {
+  return String(value)
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
+function createTextLines(text, maxLineLength = 18, maxLines = 4) {
+  const source = decodeBasicHtmlEntities(text)
+  if (!source) return []
+
+  const lines = []
+  let current = ''
+
+  for (const char of source) {
+    if (current.length >= maxLineLength && /\s/.test(char)) {
+      if (current.trim()) lines.push(current.trim())
+      current = ''
+    } else if (current.length >= maxLineLength) {
+      lines.push(current.trim())
+      current = char
+    } else {
+      current += char
+    }
+
+    if (lines.length >= maxLines) break
+  }
+
+  if (lines.length < maxLines && current.trim()) {
+    lines.push(current.trim())
+  }
+
+  return lines.slice(0, maxLines)
+}
+
+function createCanvasSafeHtmlTextSvg(document, width, height) {
+  const text = stripHtmlTags(document.html)
+  const lines = createTextLines(text)
+
+  if (lines.length === 0) return ''
+
+  const fontSize = Math.max(22, Math.min(64, Math.round(width / 12)))
+  const lineHeight = Math.round(fontSize * 1.15)
+  const blockHeight = lines.length * lineHeight
+  const startY = Math.round(height * 0.43 - blockHeight / 2)
+  const panelX = Math.round(width * 0.08)
+  const panelY = Math.max(24, startY - lineHeight)
+  const panelWidth = Math.round(width * 0.84)
+  const panelHeight = blockHeight + lineHeight * 2
+
+  const textNodes = lines
+    .map((line, index) => {
+      const y = startY + index * lineHeight + fontSize
+      return `    <text x="${Math.round(width / 2)}" y="${y}" text-anchor="middle" fill="#111827" stroke="#ffffff" stroke-width="6" paint-order="stroke fill" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="${fontSize}" font-weight="800">${escapeAttribute(line)}</text>`
+    })
+    .join('\n')
+
+  return `  <g class="cowart-html-artboard-canvas-text-fallback" aria-label="HTML text fallback">
+    <rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" fill="#ffffff" fill-opacity="0.48" rx="18" ry="18" />
+${textNodes}
+  </g>`
+}
+
 export function createHtmlArtboardFusionPatchOverlaySvg(document, options = {}) {
   const normalizedDocument = ensureHtmlArtboardDocument(document)
   const sourcePatches = Array.isArray(document?.fusionPatches)
@@ -199,6 +274,17 @@ export function createHtmlArtboardThumbnailSvg(document, options = {}) {
   const height = safeDimension(normalizedDocument.height, 1280)
   const backgroundSvg = createThumbnailBackgroundSvg(normalizedDocument, width, height, options)
   const fusionPatchOverlaySvg = createHtmlArtboardFusionPatchOverlaySvg(document, options)
+  const canvasSafe = options.canvasSafe === true
+
+  if (canvasSafe) {
+    const textFallbackSvg = createCanvasSafeHtmlTextSvg(normalizedDocument, width, height)
+
+    return `<svg xmlns="${SVG_XMLNS}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(createHtmlArtboardThumbnailAltText(normalizedDocument))}">
+${backgroundSvg}
+${textFallbackSvg}
+${fusionPatchOverlaySvg}
+</svg>`
+  }
 
   return `<svg xmlns="${SVG_XMLNS}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(createHtmlArtboardThumbnailAltText(normalizedDocument))}">
 ${backgroundSvg}
@@ -218,6 +304,13 @@ ${fusionPatchOverlaySvg}
 
 export function createHtmlArtboardThumbnailDataUrl(document, options = {}) {
   return encodeSvgDataUrl(createHtmlArtboardThumbnailSvg(document, options))
+}
+
+export function createHtmlArtboardCanvasThumbnailDataUrl(document, options = {}) {
+  return createHtmlArtboardThumbnailDataUrl(document, {
+    ...options,
+    canvasSafe: true
+  })
 }
 
 export function createHtmlArtboardThumbnailAltText(document) {

@@ -82,6 +82,7 @@ import {
   withRenderFingerprint
 } from '../src/html-runtime/renderFingerprint.js'
 import {
+  createHtmlArtboardCanvasThumbnailDataUrl,
   createHtmlArtboardFusionPatchOverlaySvg,
   createHtmlArtboardThumbnailAltText,
   createHtmlArtboardThumbnailDataUrl,
@@ -874,6 +875,32 @@ test('thumbnail svg includes image background asset', () => {
 
   assert.equal(svg.includes('data:image/png;base64,background-data'), true)
   assert.equal(svg.indexOf('<image') < svg.indexOf('<foreignObject'), true)
+})
+
+test('canvas-safe thumbnail omits foreignObject', () => {
+  const svg = createHtmlArtboardThumbnailSvg(
+    createHtmlArtboardDocument({
+      html: '<section><h1>Canvas Text</h1></section>'
+    }),
+    { canvasSafe: true }
+  )
+
+  assert.equal(svg.includes('<foreignObject'), false)
+  assert.equal(svg.includes('cowart-html-artboard-canvas-text-fallback'), true)
+  assert.equal(svg.includes('Canvas Text'), true)
+})
+
+test('createHtmlArtboardCanvasThumbnailDataUrl returns canvas-safe SVG data URL', () => {
+  const dataUrl = createHtmlArtboardCanvasThumbnailDataUrl(
+    createHtmlArtboardDocument({
+      html: '<section>Canvas URL</section>'
+    })
+  )
+  const decodedSvg = decodeURIComponent(dataUrl.split(',')[1])
+
+  assert.equal(dataUrl.startsWith('data:image/svg+xml;charset=utf-8,'), true)
+  assert.equal(decodedSvg.includes('<foreignObject'), false)
+  assert.equal(decodedSvg.includes('Canvas URL'), true)
 })
 
 test('thumbnail svg can inline external background asset urls', () => {
