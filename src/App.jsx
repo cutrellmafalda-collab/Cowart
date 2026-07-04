@@ -466,6 +466,28 @@ function hasHtmlArtboardTextLayers(runtimeDocument) {
   return Array.isArray(runtimeDocument?.textLayers) && runtimeDocument.textLayers.length > 0
 }
 
+function getGeneratedArtTextLayerIds(runtimeDocument) {
+  const patches = Array.isArray(runtimeDocument?.fusionPatches)
+    ? runtimeDocument.fusionPatches
+    : []
+
+  return new Set(
+    patches
+      .filter((patch) => {
+        return (
+          patch?.visible !== false &&
+          patch?.meta?.purpose === 'art-text' &&
+          typeof patch.patchAssetUrl === 'string' &&
+          patch.patchAssetUrl.length > 0
+        )
+      })
+      .flatMap((patch) => {
+        return [patch.meta.runtimeTextLayerId, patch.meta.dataNode ? `text-layer:${patch.meta.dataNode}` : null]
+      })
+      .filter((id) => typeof id === 'string' && id.length > 0)
+  )
+}
+
 function createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument) {
   return {
     cowartHtmlArtboardPreviewVersion: HTML_ARTBOARD_PREVIEW_VERSION,
@@ -490,6 +512,39 @@ function arrangeHtmlArtboardCanvasLayers(editor, selectedShape) {
   if (textLayerShapeIds.length > 0) {
     editor.bringToFront(textLayerShapeIds)
   }
+}
+
+function syncGeneratedArtTextSourceLayerVisibility(editor, selectedShape, runtimeDocument) {
+  const generatedArtTextLayerIds = getGeneratedArtTextLayerIds(runtimeDocument)
+  const runtimeTextLayers = Array.isArray(runtimeDocument?.textLayers)
+    ? runtimeDocument.textLayers
+    : []
+  const runtimeLayerVisibility = new Map(
+    runtimeTextLayers.map((layer) => [layer.id, layer.visible !== false])
+  )
+  const updates = findHtmlArtboardTextLayerShapes(editor, selectedShape.id)
+    .map((shape) => {
+      const runtimeTextLayerId = shape.meta?.runtimeTextLayerId
+      const dataNodeLayerId =
+        typeof shape.meta?.dataNode === 'string' && shape.meta.dataNode
+          ? `text-layer:${shape.meta.dataNode}`
+          : null
+      const shouldShow =
+        !generatedArtTextLayerIds.has(runtimeTextLayerId) &&
+        !generatedArtTextLayerIds.has(dataNodeLayerId) &&
+        (runtimeLayerVisibility.get(runtimeTextLayerId) ?? true)
+      const nextOpacity = shouldShow ? 1 : 0
+      return shape.opacity === nextOpacity
+        ? null
+        : {
+            id: shape.id,
+            type: shape.type,
+            opacity: nextOpacity
+          }
+    })
+    .filter(Boolean)
+
+  if (updates.length > 0) editor.updateShapes(updates)
 }
 
 function blobToDataUrl(blob) {
@@ -738,15 +793,6 @@ async function drawFusionPatchPreview(context, patch, assetUrlResolver) {
       drawCoverImage(context, patchImage, region.x, region.y, region.w, region.h)
     }
     context.restore()
-  } else {
-    context.setLineDash([10, 8])
-    context.lineWidth = 3
-    context.strokeStyle = 'rgba(250, 204, 21, 0.88)'
-    context.fillStyle = 'rgba(250, 204, 21, 0.12)'
-    drawRoundRect(context, region.x, region.y, region.w, region.h, 8)
-    context.fill()
-    context.stroke()
-    context.setLineDash([])
   }
 
   context.restore()
@@ -891,6 +937,7 @@ async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetU
 }
 
 async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument) {
+  syncGeneratedArtTextSourceLayerVisibility(editor, selectedShape, runtimeDocument)
   const size = getHtmlArtboardPreviewSize(runtimeDocument, selectedShape)
   const thumbnailDocument = {
     ...runtimeDocument,

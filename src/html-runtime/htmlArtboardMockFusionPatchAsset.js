@@ -150,7 +150,6 @@ function createMockArtTextAssetSvg(patch, assetId) {
   </defs>
   <rect width="900" height="260" fill="none" />
   <text x="450" y="158" text-anchor="middle" fill="url(#cowart-art-text-ice)" stroke="#ffffff" stroke-width="10" paint-order="stroke fill" filter="url(#cowart-art-text-glow)" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="118" font-weight="900" letter-spacing="2">${sourceText}</text>
-  <text x="450" y="208" text-anchor="middle" fill="#0369a1" fill-opacity="0.76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="800">mock generated · ${escapeXml(assetId)}</text>
 </svg>`
 }
 
