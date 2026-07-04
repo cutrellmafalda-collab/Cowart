@@ -481,8 +481,10 @@ function arrangeHtmlArtboardCanvasLayers(editor, selectedShape) {
     (shape) => shape.id
   )
 
+  editor.sendToBack([selectedShape.id])
+
   if (previewShape) {
-    editor.sendToBack([previewShape.id])
+    editor.bringToFront([previewShape.id])
   }
 
   if (textLayerShapeIds.length > 0) {

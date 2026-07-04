@@ -613,13 +613,26 @@ test('createHtmlArtboardTextLayersFromDocument applies poster visual roles', () 
   const layers = createHtmlArtboardTextLayersFromDocument(document)
   const byNode = Object.fromEntries(layers.map((layer) => [layer.dataNode, layer]))
 
-  assert.ok(byNode.headline.scale > byNode.subhead.scale)
-  assert.equal(byNode.headline.align, 'start')
-  assert.equal(byNode.eyebrow.color, 'blue')
-  assert.equal(byNode.eyebrow.font, 'mono')
-  assert.equal(byNode.detail.color, 'grey')
-  assert.equal(byNode.cta.color, 'orange')
-  assert.equal(byNode.cta.align, 'center')
+  assert.ok(byNode['headline-line-1'].scale > byNode.subhead.scale)
+  assert.ok(byNode['headline-line-2'].y > byNode['headline-line-1'].y)
+  assert.equal(byNode['headline-line-1'].align, 'start')
+  assert.equal(byNode.eyebrow.color, 'black')
+  assert.equal(byNode.eyebrow.font, 'sans')
+  assert.equal(byNode.detail.color, 'black')
+  assert.equal(byNode.cta.color, 'black')
+  assert.equal(byNode.cta.align, 'start')
+})
+
+test('default live poster template creates independently draggable headline lines', () => {
+  const document = createHtmlArtboardDocument()
+  const layers = createHtmlArtboardTextLayersFromDocument(document)
+
+  assert.deepEqual(
+    layers.map((layer) => layer.dataNode),
+    ['eyebrow', 'headline-line-1', 'headline-line-2', 'subhead', 'detail', 'cta']
+  )
+  assert.equal(layers[1].text, '冰感桃桃')
+  assert.equal(layers[2].text, '乌龙')
 })
 
 test('createHtmlArtboardTextLayersFromDocument skips container data-node text', () => {

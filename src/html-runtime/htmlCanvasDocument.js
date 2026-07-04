@@ -7,11 +7,14 @@ const DEFAULT_HEIGHT = 1280
 const FORBIDDEN_UI_FIELDS = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
 const DEFAULT_HTML = `<section class="artboard" data-node="hero">
-  <p class="eyebrow" data-node="eyebrow">COWART LIVE POSTER</p>
-  <h1 data-node="headline">夏日冰感上新</h1>
-  <p class="subhead" data-node="subhead">每一行文字都能在画布里单独拖动、改大小，再局部生成艺术字。</p>
-  <p class="detail" data-node="detail">底图负责氛围，HTML 负责可编辑内容，FusionPatch 负责局部融合。</p>
-  <button data-node="cta">生成艺术字</button>
+  <p class="eyebrow" data-node="eyebrow">夏日限定</p>
+  <h1 data-node="headline">
+    <span data-node="headline-line-1">冰感桃桃</span>
+    <span data-node="headline-line-2">乌龙</span>
+  </h1>
+  <p class="subhead" data-node="subhead">清爽桃桃乌龙 · 今日上新</p>
+  <p class="detail" data-node="detail">底图负责氛围，文字每行都能单独拖动，局部图像作为 FusionPatch 覆盖。</p>
+  <button data-node="cta">立即尝鲜</button>
 </section>`
 
 const DEFAULT_CSS = `.artboard {
@@ -21,61 +24,68 @@ const DEFAULT_CSS = `.artboard {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 26px;
-  padding: 108px 76px 96px;
+  gap: 22px;
+  padding: 112px 72px 88px;
   color: #10202f;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: Inter, "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   background:
-    radial-gradient(circle at 76% 20%, rgba(255,255,255,.72), transparent 26%),
-    radial-gradient(circle at 18% 72%, rgba(56,189,248,.28), transparent 34%),
-    linear-gradient(160deg, #e8f7ff 0%, #f5fbff 42%, #ffe9d4 100%);
+    radial-gradient(circle at 78% 16%, rgba(255,255,255,.78), transparent 28%),
+    radial-gradient(circle at 20% 72%, rgba(56,189,248,.32), transparent 34%),
+    linear-gradient(160deg, #e8f7ff 0%, #f5fbff 46%, #ffe9d4 100%);
 }
 
 .artboard .eyebrow {
-  margin: 0;
+  margin: 0 0 18px;
   width: max-content;
-  padding: 10px 16px;
+  padding: 10px 18px;
   border-radius: 999px;
-  background: rgba(16, 32, 47, 0.08);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: .12em;
+  background: rgba(255, 255, 255, .52);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: .16em;
 }
 
 .artboard h1 {
   margin: 0;
-  max-width: 600px;
-  font-size: 92px;
-  line-height: .98;
+  display: grid;
+  gap: 2px;
+  max-width: 610px;
+  font-size: 90px;
+  line-height: .94;
   font-weight: 900;
-  letter-spacing: -.04em;
+  letter-spacing: -.05em;
+}
+
+.artboard h1 span {
+  display: block;
 }
 
 .artboard .subhead {
-  margin: 0;
-  max-width: 590px;
-  font-size: 31px;
-  line-height: 1.45;
-  font-weight: 650;
+  margin: 24px 0 0;
+  max-width: 560px;
+  font-size: 32px;
+  line-height: 1.32;
+  font-weight: 750;
 }
 
 .artboard .detail {
   margin: 0;
   max-width: 560px;
-  color: rgba(16, 32, 47, .68);
+  color: rgba(16, 32, 47, .72);
   font-size: 22px;
   line-height: 1.55;
 }
 
 .artboard button {
-  width: 208px;
+  width: 210px;
   height: 64px;
+  margin-top: 26px;
   border: 0;
   border-radius: 999px;
-  background: #10202f;
   color: #ffffff;
-  font-size: 21px;
-  font-weight: 800;
+  background: #10324a;
+  font-size: 22px;
+  font-weight: 850;
 }`
 
 const DEFAULT_BACKGROUND = {

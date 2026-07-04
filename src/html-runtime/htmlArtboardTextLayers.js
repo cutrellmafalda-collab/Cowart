@@ -13,6 +13,12 @@ const CONTAINER_TEXT_TARGET_TAGS = new Set([
   'div',
   'footer',
   'header',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
   'main',
   'nav',
   'section'
@@ -58,53 +64,73 @@ function getDefaultTextLayerPlacement(target, index, document) {
   const placements = {
     eyebrow: {
       x: left,
-      y: Math.round(height * 0.2),
-      w: Math.round(width * 0.48),
-      fontSize: 22,
-      scale: 0.54,
-      color: 'blue',
-      font: 'mono',
+      y: Math.round(height * 0.18),
+      w: Math.round(width * 0.42),
+      fontSize: 26,
+      scale: 1,
+      color: 'black',
+      font: 'sans',
       align: 'start'
     },
     headline: {
       x: left,
       y: Math.round(height * 0.305),
       w: contentWidth,
-      fontSize: 92,
-      scale: 1.42,
+      fontSize: 88,
+      scale: 2.05,
+      color: 'black',
+      font: 'sans',
+      align: 'start'
+    },
+    'headline-line-1': {
+      x: left,
+      y: Math.round(height * 0.305),
+      w: contentWidth,
+      fontSize: 88,
+      scale: 2.05,
+      color: 'black',
+      font: 'sans',
+      align: 'start'
+    },
+    'headline-line-2': {
+      x: left,
+      y: Math.round(height * 0.405),
+      w: Math.round(width * 0.58),
+      fontSize: 88,
+      scale: 2.05,
       color: 'black',
       font: 'sans',
       align: 'start'
     },
     subhead: {
       x: left,
-      y: Math.round(height * 0.52),
-      w: Math.round(width * 0.75),
+      y: Math.round(height * 0.55),
+      w: Math.round(width * 0.78),
       fontSize: 32,
-      scale: 0.78,
+      scale: 1.12,
       color: 'black',
       font: 'sans',
       align: 'start'
     },
     detail: {
       x: left,
-      y: Math.round(height * 0.655),
-      w: Math.round(width * 0.72),
+      y: Math.round(height * 0.63),
+      w: Math.round(width * 0.75),
       fontSize: 24,
-      scale: 0.58,
-      color: 'grey',
+      scale: 0.82,
+      color: 'black',
       font: 'sans',
       align: 'start'
     },
     cta: {
       x: left,
-      y: Math.round(height * 0.805),
+      y: Math.round(height * 0.79),
       w: Math.round(width * 0.42),
       fontSize: 26,
-      scale: 0.66,
-      color: 'orange',
+      scale: 1.02,
+      color: 'black',
       font: 'sans',
-      align: 'center'
+      align: 'start'
     }
   }
 
