@@ -1410,11 +1410,28 @@ const cowartComponents = {
 function CowartStylePanel(props) {
   return (
     <DefaultStylePanel {...props}>
-      <DefaultStylePanelContent />
+      <CowartDefaultStylePanelContent />
       <CowartAiImageStyleControls />
       <CowartHtmlArtboardPreviewControls />
     </DefaultStylePanel>
   )
+}
+
+function CowartDefaultStylePanelContent() {
+  const editor = useEditor()
+  const hasHtmlArtboardSelection = useValue(
+    'selected html artboard style panel suppression',
+    () => {
+      const selectedShapeIds = editor.getSelectedShapeIds()
+      if (selectedShapeIds.length !== 1) return false
+
+      const shape = editor.getShape(selectedShapeIds[0])
+      return resolveHtmlArtboardSelection(editor, shape) !== null
+    },
+    [editor]
+  )
+
+  return hasHtmlArtboardSelection ? null : <DefaultStylePanelContent />
 }
 
 function CowartHtmlArtboardPreviewControls() {
@@ -1487,9 +1504,9 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
-      <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
       <details className="cowart-html-advanced">
-        <summary>源码与记录</summary>
+        <summary>高级：源码 / 导出 / 记录</summary>
+        <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
         <CowartHtmlArtboardAiGenerationStatus />
         <section className="cowart-html-preview-section">
           <div className="cowart-html-preview-heading">
@@ -1597,9 +1614,9 @@ function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selected
   }
 
   return (
-    <section className="cowart-html-background" aria-label="HTML 画板背景">
+    <section className="cowart-html-background" aria-label="HTML 画板底图">
       <div className="cowart-html-preview-heading">
-        <span>背景</span>
+        <span>底图</span>
         <span>{formatBackgroundStatus(status)}</span>
       </div>
       <div className="cowart-html-background-meta">
@@ -1607,12 +1624,12 @@ function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selected
         {backgroundAssetUrl ? (
           <span>文件：{background.fileName || backgroundAssetUrl.split('/').pop()}</span>
         ) : (
-          <span>尚未附加背景图。</span>
+          <span>还没有底图。</span>
         )}
       </div>
       <div className="cowart-html-background-actions">
         <button type="button" onClick={importBackgroundImage}>
-          导入背景图
+          导入底图
         </button>
         {backgroundStatus ? <span>{backgroundStatus}</span> : null}
       </div>
@@ -1646,7 +1663,7 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
   return (
     <section className="cowart-html-canvas-preview" aria-label="HTML 画板画布预览">
       <div className="cowart-html-preview-heading">
-        <span>画布预览</span>
+        <span>画布缩略图</span>
       </div>
       <div
         className={`cowart-html-preview-status cowart-html-preview-status-${freshness.status}`}
@@ -1659,7 +1676,7 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
           onClick={refreshCanvasPreview}
           type="button"
         >
-          刷新画布预览
+          刷新画布缩略图
         </button>
         {previewStatus ? (
           <span className="cowart-html-canvas-preview-status">{previewStatus}</span>
@@ -2047,7 +2064,7 @@ function CowartHtmlArtboardSelectedTextLayerControls({
   return (
     <section className="cowart-html-selected-text-layer" aria-label="当前 HTML 文字层">
       <div className="cowart-html-preview-heading">
-        <span>当前文字层</span>
+        <span>编辑当前文字</span>
         <span>{currentLayer.dataNode || '文字'}</span>
       </div>
       <label className="cowart-html-text-layer-field">
@@ -2130,11 +2147,11 @@ function CowartHtmlArtboardSelectedTextLayerControls({
       </div>
       <section className="cowart-html-art-text" aria-label="艺术字融合">
         <div className="cowart-html-preview-heading">
-          <span>艺术字融合</span>
+          <span>生成艺术字</span>
           <span>{currentLayer.dataNode || '文字层'}</span>
         </div>
         <label className="cowart-html-text-layer-field">
-          <span>艺术字提示词</span>
+          <span>想要的艺术字效果</span>
           <textarea
             value={artPrompt}
             onChange={(event) => setArtPrompt(event.target.value)}
@@ -2142,27 +2159,30 @@ function CowartHtmlArtboardSelectedTextLayerControls({
           />
         </label>
         <div className="cowart-html-art-text-actions">
-          <button type="button" onClick={prepareArtTextPatch}>
-            准备图层
-          </button>
           <button type="button" onClick={copyArtTextGenerationRequest}>
-            复制生图任务
+            复制给 Codex 生图
           </button>
           <button type="button" onClick={importArtTextImageAsset}>
-            导入艺术字图片
+            导入生成图片
+          </button>
+          <button type="button" onClick={prepareArtTextPatch}>
+            创建艺术字图层
           </button>
           <button type="button" onClick={generateMockArtTextAsset}>
-            生成占位效果
+            预览占位效果
           </button>
           {artTextStatus ? <span>{artTextStatus}</span> : null}
         </div>
         {artRequestText ? (
-          <textarea
-            aria-label="艺术字生图任务 JSON"
-            className="cowart-html-art-text-request"
-            readOnly
-            value={artRequestText}
-          />
+          <details className="cowart-html-art-text-request-details">
+            <summary>查看生图任务 JSON</summary>
+            <textarea
+              aria-label="艺术字生图任务 JSON"
+              className="cowart-html-art-text-request"
+              readOnly
+              value={artRequestText}
+            />
+          </details>
         ) : null}
       </section>
     </section>
@@ -2236,15 +2256,15 @@ function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selected
   return (
     <section className="cowart-html-text-layers" aria-label="HTML 画板文字层">
       <div className="cowart-html-preview-heading">
-        <span>文字层</span>
+        <span>可拖动文字</span>
         <span>{textLayerShapes.length || runtimeTextLayers.length}</span>
       </div>
       <div className="cowart-html-text-layer-actions">
         <button type="button" onClick={createOrRefreshTextLayers}>
-          生成 / 刷新文字层
+          生成可拖动文字
         </button>
         <button type="button" onClick={syncTextLayersToRuntime}>
-          同步文字层
+          同步画布文字
         </button>
         {textLayerStatus ? <span>{textLayerStatus}</span> : null}
       </div>
@@ -2843,7 +2863,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
   }
 
   return (
-    <li className="cowart-html-fusion-item">
+    <li className={`cowart-html-fusion-item${visible ? '' : ' cowart-html-fusion-item-hidden'}`}>
       <div className="cowart-html-fusion-meta">
         <span>{patch.name}</span>
         <span>
@@ -2859,48 +2879,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
           <img alt="" src={patch.patchAssetUrl} />
         </div>
       ) : null}
-      <label className="cowart-html-fusion-field">
-        <span>名称</span>
-        <input
-          aria-label={`Fusion patch name ${patch.id}`}
-          value={draftName}
-          onChange={(event) => setDraftName(event.target.value)}
-        />
-      </label>
-      <label className="cowart-html-fusion-field">
-        <span>提示词</span>
-        <textarea
-          aria-label={`Fusion patch prompt ${patch.id}`}
-          value={draftPrompt}
-          onChange={(event) => setDraftPrompt(event.target.value)}
-        />
-      </label>
-      <div className="cowart-html-fusion-region" aria-label={`融合图层区域 ${patch.id}`}>
-        {['x', 'y', 'w', 'h'].map((field) => {
-          const fieldLabel = field === 'w' ? '宽' : field === 'h' ? '高' : field.toUpperCase()
-
-          return (
-            <label key={field}>
-              <span>{fieldLabel}</span>
-              <input
-                aria-label={`融合图层区域 ${fieldLabel} ${patch.id}`}
-                min={field === 'w' || field === 'h' ? 1 : undefined}
-                type="number"
-                value={draftRegion[field]}
-                onChange={(event) => updateRegionDraft(field, event.target.value)}
-              />
-            </label>
-          )
-        })}
-      </div>
       <div className="cowart-html-fusion-actions">
-        <button
-          aria-label={`应用融合图层修改 ${patch.id}`}
-          type="button"
-          onClick={applyPatchChanges}
-        >
-          应用修改
-        </button>
         <button
           aria-label={`${visible ? '隐藏' : '显示'}融合图层 ${patch.id}`}
           type="button"
@@ -2916,21 +2895,68 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
           删除
         </button>
         <button
-          aria-label={`生成模拟素材 ${patch.id}`}
-          type="button"
-          onClick={generateMockPatchAsset}
-        >
-          生成模拟素材
-        </button>
-        <button
+          className="cowart-html-fusion-action-primary"
           aria-label={`导入融合图层图片素材 ${patch.id}`}
           type="button"
           onClick={importPatchImageAsset}
         >
-          导入图片素材
+          导入生成图
+        </button>
+        <button
+          aria-label={`生成模拟素材 ${patch.id}`}
+          type="button"
+          onClick={generateMockPatchAsset}
+        >
+          预览占位图
         </button>
         {patchStatus ? <span>{patchStatus}</span> : null}
       </div>
+      <details className="cowart-html-fusion-editor-details">
+        <summary>编辑提示词和位置</summary>
+        <label className="cowart-html-fusion-field">
+          <span>名称</span>
+          <input
+            aria-label={`Fusion patch name ${patch.id}`}
+            value={draftName}
+            onChange={(event) => setDraftName(event.target.value)}
+          />
+        </label>
+        <label className="cowart-html-fusion-field">
+          <span>提示词</span>
+          <textarea
+            aria-label={`Fusion patch prompt ${patch.id}`}
+            value={draftPrompt}
+            onChange={(event) => setDraftPrompt(event.target.value)}
+          />
+        </label>
+        <div className="cowart-html-fusion-region" aria-label={`融合图层区域 ${patch.id}`}>
+          {['x', 'y', 'w', 'h'].map((field) => {
+            const fieldLabel = field === 'w' ? '宽' : field === 'h' ? '高' : field.toUpperCase()
+
+            return (
+              <label key={field}>
+                <span>{fieldLabel}</span>
+                <input
+                  aria-label={`融合图层区域 ${fieldLabel} ${patch.id}`}
+                  min={field === 'w' || field === 'h' ? 1 : undefined}
+                  type="number"
+                  value={draftRegion[field]}
+                  onChange={(event) => updateRegionDraft(field, event.target.value)}
+                />
+              </label>
+            )
+          })}
+        </div>
+        <div className="cowart-html-fusion-actions">
+          <button
+            aria-label={`应用融合图层修改 ${patch.id}`}
+            type="button"
+            onClick={applyPatchChanges}
+          >
+            应用修改
+          </button>
+        </div>
+      </details>
     </li>
   )
 }
@@ -2996,12 +3022,12 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
   return (
     <section className="cowart-html-fusion-patches" aria-label="HTML 画板融合图层">
       <div className="cowart-html-preview-heading">
-        <span>融合图层</span>
+        <span>局部融合图层</span>
         <span>共 {fusionPatches.length} 个</span>
       </div>
       <section className="cowart-html-patch-targets" aria-label="HTML 画板目标节点">
         <div className="cowart-html-preview-heading">
-          <span>目标节点</span>
+          <span>可融合目标</span>
           <span>找到 {usefulPatchTargets.length} 个</span>
         </div>
         {usefulPatchTargets.length === 0 ? (
@@ -3057,7 +3083,7 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
         </ol>
       )}
       <button className="cowart-html-fusion-add" onClick={addMockFusionPatch} type="button">
-        添加模拟融合图层
+        添加融合图层
       </button>
     </section>
   )
