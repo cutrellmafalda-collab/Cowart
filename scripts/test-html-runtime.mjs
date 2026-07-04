@@ -616,6 +616,24 @@ test('normalizeHtmlArtboardTextLayers normalizes numeric fields', () => {
   assert.equal(layer.fontSize, 30)
 })
 
+test('normalizeHtmlArtboardTextLayers preserves visual text layer controls', () => {
+  const [layer] = normalizeHtmlArtboardTextLayers([
+    {
+      id: 'layer:visual',
+      text: 'Visual',
+      color: 'blue',
+      align: 'center',
+      scale: '1.75',
+      visible: false
+    }
+  ])
+
+  assert.equal(layer.color, 'blue')
+  assert.equal(layer.align, 'center')
+  assert.equal(layer.scale, 1.75)
+  assert.equal(layer.visible, false)
+})
+
 test('applyHtmlArtboardTextLayersToHtml updates matching data-node text', () => {
   const html = '<section><h1 data-node="headline">Before</h1><p>Keep</p></section>'
   const nextHtml = applyHtmlArtboardTextLayersToHtml(html, [

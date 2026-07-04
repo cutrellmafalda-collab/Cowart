@@ -260,6 +260,59 @@ body {
   border-radius: var(--tl-radius-2);
 }
 
+.cowart-html-selected-text-layer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-primary, #2563eb);
+  border-radius: var(--tl-radius-2);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.16);
+}
+
+.cowart-html-text-layer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.cowart-html-text-layer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--tl-color-text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cowart-html-text-layer-field input,
+.cowart-html-text-layer-field select,
+.cowart-html-text-layer-field textarea {
+  width: 100%;
+  min-width: 0;
+  color: var(--tl-color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+}
+
+.cowart-html-text-layer-field input,
+.cowart-html-text-layer-field select {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.cowart-html-text-layer-field textarea {
+  min-height: 52px;
+  padding: 7px 8px;
+  resize: vertical;
+}
+
 .cowart-html-text-layer-note {
   margin: 0;
   color: var(--tl-color-text-2);

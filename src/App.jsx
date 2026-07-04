@@ -93,6 +93,16 @@ const AI_IMAGE_TOOL_ID = 'ai-image'
 const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
 const HTML_ARTBOARD_TOOL_LABEL = 'HTML 画板'
 const HTML_ARTBOARD_PREVIEW_VERSION = 1
+const HTML_TEXT_LAYER_COLOR_OPTIONS = [
+  { value: 'black', label: '黑色' },
+  { value: 'grey', label: '灰色' },
+  { value: 'blue', label: '蓝色' },
+  { value: 'light-blue', label: '浅蓝' },
+  { value: 'green', label: '绿色' },
+  { value: 'orange', label: '橙色' },
+  { value: 'red', label: '红色' },
+  { value: 'white', label: '白色' }
+]
 const AI_IMAGE_HOLDER_LABEL = 'AI 图片'
 const AI_IMAGE_HOLDER_DEFAULT_W = 512
 const AI_IMAGE_HOLDER_DEFAULT_H = 683
@@ -418,7 +428,7 @@ function findHtmlArtboardTextLayerShapes(editor, sourceShapeId) {
 
 function resolveHtmlArtboardSelection(editor, shape) {
   const runtimeDocument = cowartShapeToHtmlArtboard(shape)
-  if (runtimeDocument) return { runtimeDocument, shape }
+  if (runtimeDocument) return { runtimeDocument, shape, selectedShape: shape, textLayerShape: null }
 
   if (
     !(
@@ -434,7 +444,14 @@ function resolveHtmlArtboardSelection(editor, shape) {
 
   const sourceShape = editor.getShape(sourceShapeId)
   const sourceRuntimeDocument = cowartShapeToHtmlArtboard(sourceShape)
-  return sourceRuntimeDocument ? { runtimeDocument: sourceRuntimeDocument, shape: sourceShape } : null
+  return sourceRuntimeDocument
+    ? {
+        runtimeDocument: sourceRuntimeDocument,
+        shape: sourceShape,
+        selectedShape: shape,
+        textLayerShape: shape?.type === 'text' ? shape : null
+      }
+    : null
 }
 
 function hasHtmlArtboardTextLayers(runtimeDocument) {
@@ -1210,7 +1227,7 @@ function CowartHtmlArtboardPreviewControls() {
 
   if (!selectedHtmlArtboard) return null
 
-  const { runtimeDocument, shape } = selectedHtmlArtboard
+  const { runtimeDocument, shape, textLayerShape } = selectedHtmlArtboard
   const srcDoc = createHtmlArtboardPreviewSrcDoc(runtimeDocument)
   const sourceSnapshot = createHtmlArtboardSourceSnapshot(runtimeDocument)
 
@@ -1228,6 +1245,12 @@ function CowartHtmlArtboardPreviewControls() {
         editor={editor}
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
+      />
+      <CowartHtmlArtboardSelectedTextLayerControls
+        editor={editor}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+        textLayerShape={textLayerShape}
       />
       <CowartHtmlArtboardTextLayerControls
         editor={editor}
@@ -1374,9 +1397,12 @@ function getTextLayerTextShapeProps(layer) {
   const textAlign = layer.align === 'center' ? 'middle' : layer.align === 'end' ? 'end' : 'start'
   const scale = Math.max(0.25, Number(layer.scale) || Number(layer.fontSize) / 32 || 1)
   const visualWidth = Math.max(32, Number(layer.w) || 240)
+  const color = HTML_TEXT_LAYER_COLOR_OPTIONS.some((option) => option.value === layer.color)
+    ? layer.color
+    : 'black'
 
   return {
-    color: 'black',
+    color,
     size: 'xl',
     font: 'sans',
     textAlign,
@@ -1469,6 +1495,187 @@ function getTextLayerFromShape(editor, selectedShape, textShape) {
     visible: textShape.opacity !== 0,
     meta: {}
   }
+}
+
+function normalizeTextLayerScale(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return 1
+  return Math.min(Math.max(number, 0.25), 4)
+}
+
+function normalizeTextLayerVisualWidth(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0) return 240
+  return Math.min(Math.max(number, 32), 2400)
+}
+
+function normalizeTextLayerAlign(value) {
+  return value === 'center' || value === 'end' ? value : 'start'
+}
+
+function normalizeTextLayerColor(value) {
+  return HTML_TEXT_LAYER_COLOR_OPTIONS.some((option) => option.value === value) ? value : 'black'
+}
+
+function CowartHtmlArtboardSelectedTextLayerControls({
+  editor,
+  runtimeDocument,
+  selectedShape,
+  textLayerShape
+}) {
+  const [draftText, setDraftText] = useState('')
+  const [draftScale, setDraftScale] = useState('1')
+  const [draftWidth, setDraftWidth] = useState('240')
+  const [draftColor, setDraftColor] = useState('black')
+  const [draftAlign, setDraftAlign] = useState('start')
+  const [textLayerStatus, setTextLayerStatus] = useState('')
+
+  const currentLayer = useMemo(() => {
+    if (!textLayerShape) return null
+    return getTextLayerFromShape(editor, selectedShape, textLayerShape)
+  }, [editor, selectedShape, textLayerShape])
+
+  useEffect(() => {
+    if (!currentLayer) return
+
+    setDraftText(currentLayer.text)
+    setDraftScale(String(Number(currentLayer.scale || 1).toFixed(2)).replace(/\.?0+$/, ''))
+    setDraftWidth(String(Math.round(currentLayer.w || 240)))
+    setDraftColor(normalizeTextLayerColor(currentLayer.color))
+    setDraftAlign(normalizeTextLayerAlign(currentLayer.align))
+  }, [
+    currentLayer?.id,
+    currentLayer?.text,
+    currentLayer?.scale,
+    currentLayer?.w,
+    currentLayer?.color,
+    currentLayer?.align
+  ])
+
+  useEffect(() => {
+    setTextLayerStatus('')
+  }, [currentLayer?.id])
+
+  if (!textLayerShape || !currentLayer) return null
+
+  function applyTextLayerChanges() {
+    try {
+      const nextScale = normalizeTextLayerScale(draftScale)
+      const nextLayer = {
+        ...currentLayer,
+        text: draftText,
+        sourceText: draftText,
+        scale: nextScale,
+        fontSize: Math.round(32 * nextScale),
+        w: normalizeTextLayerVisualWidth(draftWidth),
+        color: normalizeTextLayerColor(draftColor),
+        align: normalizeTextLayerAlign(draftAlign)
+      }
+
+      editor.updateShapes([
+        {
+          id: textLayerShape.id,
+          type: textLayerShape.type,
+          props: getTextLayerTextShapeProps(nextLayer),
+          opacity: nextLayer.visible === false ? 0 : 1,
+          meta: {
+            ...(textLayerShape.meta ?? {}),
+            ...createTextLayerShapeMeta(selectedShape, nextLayer)
+          }
+        }
+      ])
+
+      const textLayerShapes = findHtmlArtboardTextLayerShapes(editor, selectedShape.id)
+      const nextTextLayers = (textLayerShapes.length > 0 ? textLayerShapes : [textLayerShape]).map(
+        (shape) =>
+          shape.id === textLayerShape.id
+            ? nextLayer
+            : getTextLayerFromShape(editor, selectedShape, shape)
+      )
+      const updatedDocument = updateHtmlArtboardTextLayers(runtimeDocument, nextTextLayers)
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'update-html-artboard-text-layer'
+      )
+      editor.select(textLayerShape.id)
+      setTextLayerStatus('已更新当前文字层')
+    } catch {
+      setTextLayerStatus('文字层更新失败')
+    }
+  }
+
+  return (
+    <section className="cowart-html-selected-text-layer" aria-label="当前 HTML 文字层">
+      <div className="cowart-html-preview-heading">
+        <span>当前文字层</span>
+        <span>{currentLayer.dataNode || '文字'}</span>
+      </div>
+      <label className="cowart-html-text-layer-field">
+        <span>文字</span>
+        <textarea
+          value={draftText}
+          onChange={(event) => setDraftText(event.target.value)}
+          rows={2}
+        />
+      </label>
+      <div className="cowart-html-text-layer-grid">
+        <label className="cowart-html-text-layer-field">
+          <span>大小</span>
+          <input
+            min="0.25"
+            max="4"
+            step="0.05"
+            type="number"
+            value={draftScale}
+            onChange={(event) => setDraftScale(event.target.value)}
+          />
+        </label>
+        <label className="cowart-html-text-layer-field">
+          <span>宽度</span>
+          <input
+            min="32"
+            max="2400"
+            step="1"
+            type="number"
+            value={draftWidth}
+            onChange={(event) => setDraftWidth(event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="cowart-html-text-layer-grid">
+        <label className="cowart-html-text-layer-field">
+          <span>颜色</span>
+          <select value={draftColor} onChange={(event) => setDraftColor(event.target.value)}>
+            {HTML_TEXT_LAYER_COLOR_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cowart-html-text-layer-field">
+          <span>对齐</span>
+          <select value={draftAlign} onChange={(event) => setDraftAlign(event.target.value)}>
+            <option value="start">左对齐</option>
+            <option value="center">居中</option>
+            <option value="end">右对齐</option>
+          </select>
+        </label>
+      </div>
+      <div className="cowart-html-text-layer-actions">
+        <button type="button" onClick={applyTextLayerChanges}>
+          应用文字修改
+        </button>
+        {textLayerStatus ? <span>{textLayerStatus}</span> : null}
+      </div>
+      <p className="cowart-html-text-layer-note">
+        位置直接在画布拖动；改完文字、大小或颜色后，画布预览会提示需要刷新。
+      </p>
+    </section>
+  )
 }
 
 function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selectedShape }) {
