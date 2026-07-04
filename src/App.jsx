@@ -96,6 +96,7 @@ const AI_IMAGE_TOOL_ID = 'ai-image'
 const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
 const HTML_ARTBOARD_TOOL_LABEL = 'HTML 活海报'
 const HTML_ARTBOARD_PREVIEW_VERSION = 1
+const HTML_ARTBOARD_FUSION_PATCH_LAYER_VERSION = 1
 const HTML_TEXT_LAYER_COLOR_OPTIONS = [
   { value: 'black', label: '黑色' },
   { value: 'grey', label: '灰色' },
@@ -410,6 +411,10 @@ function createHtmlArtboardPreviewAssetId(shapeId) {
   return `asset:html-artboard-preview-${sanitizeTldrawIdPart(shapeId)}`
 }
 
+function createHtmlArtboardFusionPatchLayerAssetId(shapeId, patchId) {
+  return `asset:html-artboard-fusion-layer-${sanitizeTldrawIdPart(shapeId)}-${sanitizeTldrawIdPart(patchId)}`
+}
+
 function findHtmlArtboardPreviewShape(editor, sourceShapeId) {
   const matchingPreviewShapes = editor
     .getCurrentPageShapes()
@@ -434,6 +439,24 @@ function findHtmlArtboardTextLayerShapes(editor, sourceShapeId) {
   })
 }
 
+function findHtmlArtboardFusionPatchLayerShapes(editor, sourceShapeId) {
+  return editor.getCurrentPageShapesSorted().filter((shape) => {
+    return (
+      shape?.type === 'image' &&
+      shape?.meta?.cowartHtmlArtboardFusionPatchLayer === true &&
+      shape?.meta?.sourceHtmlArtboardShapeId === sourceShapeId
+    )
+  })
+}
+
+function findHtmlArtboardFusionPatchLayerShape(editor, sourceShapeId, patchId) {
+  return (
+    findHtmlArtboardFusionPatchLayerShapes(editor, sourceShapeId).find(
+      (shape) => shape?.meta?.fusionPatchId === patchId
+    ) ?? null
+  )
+}
+
 function resolveHtmlArtboardSelection(editor, shape) {
   const runtimeDocument = cowartShapeToHtmlArtboard(shape)
   if (runtimeDocument) return { runtimeDocument, shape, selectedShape: shape, textLayerShape: null }
@@ -441,6 +464,7 @@ function resolveHtmlArtboardSelection(editor, shape) {
   if (
     !(
       (shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardPreview === true) ||
+      (shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardFusionPatchLayer === true) ||
       (shape?.type === 'text' && shape?.meta?.cowartHtmlArtboardTextLayer === true)
     )
   ) {
@@ -502,6 +526,10 @@ function arrangeHtmlArtboardCanvasLayers(editor, selectedShape) {
   const textLayerShapeIds = findHtmlArtboardTextLayerShapes(editor, selectedShape.id).map(
     (shape) => shape.id
   )
+  const fusionPatchLayerShapeIds = findHtmlArtboardFusionPatchLayerShapes(
+    editor,
+    selectedShape.id
+  ).map((shape) => shape.id)
 
   editor.sendToBack([selectedShape.id])
 
@@ -511,6 +539,10 @@ function arrangeHtmlArtboardCanvasLayers(editor, selectedShape) {
 
   if (textLayerShapeIds.length > 0) {
     editor.bringToFront(textLayerShapeIds)
+  }
+
+  if (fusionPatchLayerShapeIds.length > 0) {
+    editor.bringToFront(fusionPatchLayerShapeIds)
   }
 }
 
@@ -926,11 +958,13 @@ async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetU
     drawPreviewTextFallback(context, runtimeDocument, width, height)
   }
 
-  const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
-    ? runtimeDocument.fusionPatches
-    : []
-  for (const patch of fusionPatches) {
-    await drawFusionPatchPreview(context, patch, assetUrlResolver)
+  if (!options.omitFusionPatches) {
+    const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
+      ? runtimeDocument.fusionPatches
+      : []
+    for (const patch of fusionPatches) {
+      await drawFusionPatchPreview(context, patch, assetUrlResolver)
+    }
   }
 
   return canvas.toDataURL('image/png')
@@ -949,6 +983,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     thumbnailDocument,
     assetUrlResolver,
     {
+      omitFusionPatches: true,
       omitTextFallback: findHtmlArtboardTextLayerShapes(editor, selectedShape.id).length > 0
     }
   )
@@ -1034,6 +1069,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
     })
   }
 
+  upsertHtmlArtboardFusionPatchLayerShapes(editor, selectedShape, runtimeDocument)
   arrangeHtmlArtboardCanvasLayers(editor, selectedShape)
   editor.select(selectedShape.id)
 }
@@ -1763,6 +1799,166 @@ function upsertHtmlArtboardTextLayerShapes(editor, selectedShape, textLayers) {
   if (staleShapeIds.length > 0) editor.deleteShapes(staleShapeIds)
 
   return [...updates.map((shape) => shape.id), ...createdShapeIds]
+}
+
+function inferImageMimeTypeFromUrl(url) {
+  if (typeof url !== 'string') return 'image/png'
+  if (url.startsWith('data:')) {
+    const match = url.match(/^data:([^;,]+)/)
+    return match?.[1] ?? 'image/png'
+  }
+
+  const normalizedUrl = url.toLowerCase()
+  if (normalizedUrl.endsWith('.webp')) return 'image/webp'
+  if (normalizedUrl.endsWith('.jpg') || normalizedUrl.endsWith('.jpeg')) return 'image/jpeg'
+  if (normalizedUrl.endsWith('.svg')) return 'image/svg+xml'
+  return 'image/png'
+}
+
+function createHtmlArtboardFusionPatchLayerMeta(selectedShape, runtimeDocument, patch) {
+  return {
+    cowartHtmlArtboardFusionPatchLayerVersion: HTML_ARTBOARD_FUSION_PATCH_LAYER_VERSION,
+    cowartHtmlArtboardFusionPatchLayer: true,
+    sourceHtmlArtboardShapeId: selectedShape.id,
+    sourceDocumentId: runtimeDocument.id,
+    sourceRenderFingerprint: runtimeDocument.renderFingerprint,
+    fusionPatchId: patch.id,
+    fusionPatchName: patch.name
+  }
+}
+
+function getFusionPatchLayerAssetRecord(selectedShape, patch, region) {
+  const assetId = createHtmlArtboardFusionPatchLayerAssetId(selectedShape.id, patch.id)
+  const patchAssetUrl = typeof patch.patchAssetUrl === 'string' ? patch.patchAssetUrl : ''
+
+  return {
+    id: assetId,
+    typeName: 'asset',
+    type: 'image',
+    props: {
+      name: `${patch.name || '融合图层'}.png`,
+      src: patchAssetUrl,
+      w: region.w,
+      h: region.h,
+      fileSize: patchAssetUrl.length,
+      mimeType: inferImageMimeTypeFromUrl(patchAssetUrl),
+      isAnimated: false
+    },
+    meta: {
+      source: 'html-artboard-fusion-patch-layer',
+      fusionPatchId: patch.id
+    }
+  }
+}
+
+function getFusionPatchLayerImageProps(patch, region, assetId) {
+  return {
+    w: region.w,
+    h: region.h,
+    assetId,
+    playing: true,
+    url: '',
+    crop: null,
+    flipX: false,
+    flipY: false,
+    altText: patch.name || 'HTML 活海报融合图层'
+  }
+}
+
+function isFusionPatchDrawableOnCanvas(patch) {
+  const isArtTextPatch = patch?.meta?.purpose === 'art-text'
+  const isMockPatch = patch?.provider === 'mock' || patch?.status === 'mock-generated'
+  return (
+    patch?.visible !== false &&
+    (!isMockPatch || isArtTextPatch) &&
+    typeof patch?.patchAssetUrl === 'string' &&
+    patch.patchAssetUrl.length > 0 &&
+    getValidFusionPatchRegion(patch.region) !== null
+  )
+}
+
+function upsertHtmlArtboardFusionPatchLayerShapes(editor, selectedShape, runtimeDocument) {
+  const existingShapes = findHtmlArtboardFusionPatchLayerShapes(editor, selectedShape.id)
+  const existingByPatchId = new Map(
+    existingShapes
+      .map((shape) => [shape.meta?.fusionPatchId, shape])
+      .filter(([patchId]) => typeof patchId === 'string' && patchId)
+  )
+  const drawablePatches = (Array.isArray(runtimeDocument.fusionPatches)
+    ? runtimeDocument.fusionPatches
+    : []
+  ).filter(isFusionPatchDrawableOnCanvas)
+  const drawablePatchIds = new Set(drawablePatches.map((patch) => patch.id))
+  const updates = []
+  const createdShapeIds = []
+
+  for (const patch of drawablePatches) {
+    const region = getValidFusionPatchRegion(patch.region)
+    const existingShape = existingByPatchId.get(patch.id)
+    const assetRecord = getFusionPatchLayerAssetRecord(selectedShape, patch, region)
+    const imageProps = getFusionPatchLayerImageProps(patch, region, assetRecord.id)
+
+    if (editor.getAsset(assetRecord.id)) {
+      editor.updateAssets([
+        {
+          id: assetRecord.id,
+          type: 'image',
+          props: assetRecord.props,
+          meta: assetRecord.meta
+        }
+      ])
+    } else {
+      editor.createAssets([assetRecord])
+    }
+
+    const shapeRecord = {
+      id: existingShape?.id ?? createShapeId(),
+      type: 'image',
+      x: selectedShape.x + region.x,
+      y: selectedShape.y + region.y,
+      rotation: selectedShape.rotation ?? 0,
+      parentId: selectedShape.parentId,
+      isLocked: false,
+      opacity: Number.isFinite(Number(patch.opacity))
+        ? Math.min(Math.max(Number(patch.opacity), 0), 1)
+        : 1,
+      props: imageProps,
+      meta: {
+        ...(existingShape?.meta ?? {}),
+        ...createHtmlArtboardFusionPatchLayerMeta(selectedShape, runtimeDocument, patch)
+      }
+    }
+
+    if (existingShape) {
+      updates.push(shapeRecord)
+    } else {
+      editor.createShape(shapeRecord)
+      createdShapeIds.push(shapeRecord.id)
+    }
+  }
+
+  if (updates.length > 0) editor.updateShapes(updates)
+
+  const staleShapeIds = existingShapes
+    .filter((shape) => !drawablePatchIds.has(shape.meta?.fusionPatchId))
+    .map((shape) => shape.id)
+  if (staleShapeIds.length > 0) editor.deleteShapes(staleShapeIds)
+
+  return [...updates.map((shape) => shape.id), ...createdShapeIds]
+}
+
+function getFusionPatchRegionFromShape(editor, selectedShape, patchShape) {
+  const pageBounds = editor.getShapePageBounds?.(patchShape)
+  const width = Number(pageBounds?.w ?? patchShape.props?.w)
+  const height = Number(pageBounds?.h ?? patchShape.props?.h)
+  const region = {
+    x: Math.round(patchShape.x - selectedShape.x),
+    y: Math.round(patchShape.y - selectedShape.y),
+    w: Math.round(width),
+    h: Math.round(height)
+  }
+
+  return getValidFusionPatchRegion(region)
 }
 
 function getTextLayerFromShape(editor, selectedShape, textShape) {
@@ -2749,17 +2945,22 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
     patch.status
   ])
 
-  function updatePatchDocument(updatedDocument, historyLabel, successMessage) {
+  async function updatePatchDocument(updatedDocument, historyLabel, successMessage) {
     if (!hasRuntimeDocumentChange(runtimeDocument, updatedDocument)) {
       setPatchStatus('没有可应用的修改')
       return
     }
 
     writeHtmlArtboardRuntimeDocument(editor, selectedShape, updatedDocument, historyLabel)
-    setPatchStatus(successMessage)
+    try {
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      setPatchStatus(`${successMessage}，画布已刷新`)
+    } catch {
+      setPatchStatus(`${successMessage}，但画布刷新失败`)
+    }
   }
 
-  function applyPatchChanges() {
+  async function applyPatchChanges() {
     const nextRegion = parseFusionPatchRegionDraft(draftRegion)
     if (!nextRegion) {
       setPatchStatus('区域数值无效')
@@ -2771,33 +2972,33 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
       prompt: draftPrompt,
       region: nextRegion
     })
-    updatePatchDocument(updatedDocument, 'update-html-artboard-fusion-patch', '图层已更新')
+    await updatePatchDocument(updatedDocument, 'update-html-artboard-fusion-patch', '图层已更新')
   }
 
-  function togglePatchVisibility() {
+  async function togglePatchVisibility() {
     const updatedDocument = setFusionPatchVisibilityInHtmlArtboard(
       runtimeDocument,
       patch.id,
       !visible
     )
-    updatePatchDocument(
+    await updatePatchDocument(
       updatedDocument,
       'toggle-html-artboard-fusion-patch-visibility',
       visible ? '已隐藏' : '已显示'
     )
   }
 
-  function deletePatch() {
+  async function deletePatch() {
     const updatedDocument = deleteFusionPatchFromHtmlArtboard(runtimeDocument, patch.id)
-    updatePatchDocument(updatedDocument, 'delete-html-artboard-fusion-patch', '图层已删除')
+    await updatePatchDocument(updatedDocument, 'delete-html-artboard-fusion-patch', '图层已删除')
   }
 
-  function generateMockPatchAsset() {
+  async function generateMockPatchAsset() {
     const updatedDocument = generateMockFusionPatchAssetForHtmlArtboard(
       runtimeDocument,
       patch.id
     )
-    updatePatchDocument(
+    await updatePatchDocument(
       updatedDocument,
       'generate-html-artboard-mock-fusion-patch-asset',
       '已生成模拟素材'
@@ -2962,9 +3163,15 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
 }
 
 function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShape }) {
+  const [fusionLayerStatus, setFusionLayerStatus] = useState('')
   const fusionPatches = Array.isArray(runtimeDocument.fusionPatches)
     ? runtimeDocument.fusionPatches
     : []
+  const fusionPatchLayerShapes = useValue(
+    'selected html artboard fusion patch layer shapes',
+    () => findHtmlArtboardFusionPatchLayerShapes(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
   const patchTargets = useMemo(
     () => extractHtmlArtboardPatchTargets(runtimeDocument),
     [runtimeDocument.html]
@@ -2989,6 +3196,10 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
     usefulPatchTargets.find((target) => target.id === selectedTargetId) ??
     usefulPatchTargets[0] ??
     null
+
+  useEffect(() => {
+    setFusionLayerStatus('')
+  }, [selectedShape.id, runtimeDocument.renderFingerprint])
 
   function addMockFusionPatch() {
     const targetPatchOptions = selectedTarget
@@ -3017,13 +3228,78 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
         }
       }
     ])
+    setFusionLayerStatus('已添加融合图层，导入或生成图片后可在画布拖动')
+  }
+
+  async function refreshFusionPatchCanvasLayers() {
+    try {
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument)
+      editor.select(selectedShape.id)
+      setFusionLayerStatus('已生成可拖动融合图层')
+    } catch {
+      setFusionLayerStatus('生成融合图层失败')
+    }
+  }
+
+  async function syncFusionPatchCanvasLayersToRuntime() {
+    try {
+      const currentLayerShapes = findHtmlArtboardFusionPatchLayerShapes(editor, selectedShape.id)
+      if (currentLayerShapes.length === 0) {
+        setFusionLayerStatus('画布上还没有可同步的融合图层')
+        return
+      }
+
+      let updatedDocument = runtimeDocument
+      let syncedCount = 0
+      for (const shape of currentLayerShapes) {
+        const patchId = shape.meta?.fusionPatchId
+        if (typeof patchId !== 'string' || !patchId) continue
+
+        const region = getFusionPatchRegionFromShape(editor, selectedShape, shape)
+        if (!region) continue
+
+        const nextDocument = updateFusionPatchInHtmlArtboard(updatedDocument, patchId, {
+          region
+        })
+        if (hasRuntimeDocumentChange(updatedDocument, nextDocument)) {
+          updatedDocument = nextDocument
+          syncedCount += 1
+        }
+      }
+
+      if (syncedCount === 0) {
+        setFusionLayerStatus('没有位置变化需要同步')
+        return
+      }
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'sync-html-artboard-fusion-patch-layers'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      editor.select(selectedShape.id)
+      setFusionLayerStatus(`已同步 ${syncedCount} 个融合图层`)
+    } catch {
+      setFusionLayerStatus('同步融合图层失败')
+    }
   }
 
   return (
     <section className="cowart-html-fusion-patches" aria-label="HTML 画板融合图层">
       <div className="cowart-html-preview-heading">
         <span>局部融合图层</span>
-        <span>共 {fusionPatches.length} 个</span>
+        <span>共 {fusionPatches.length} 个 · 画布 {fusionPatchLayerShapes.length} 个</span>
+      </div>
+      <div className="cowart-html-fusion-toolbar">
+        <button type="button" onClick={refreshFusionPatchCanvasLayers}>
+          生成可拖动图层
+        </button>
+        <button type="button" onClick={syncFusionPatchCanvasLayersToRuntime}>
+          同步画布图层
+        </button>
+        {fusionLayerStatus ? <span>{fusionLayerStatus}</span> : null}
       </div>
       <section className="cowart-html-patch-targets" aria-label="HTML 画板目标节点">
         <div className="cowart-html-preview-heading">
