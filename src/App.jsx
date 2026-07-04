@@ -90,6 +90,7 @@ const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
 const SELECTION_ENDPOINT = '/api/selection'
 const VIEW_STATE_ENDPOINT = '/api/view-state'
+const PAGE_ASSET_ENDPOINT = '/api/page-asset'
 const SELECTION_STATE_ELEMENT_ID = 'cowart-selection-state'
 const AI_IMAGE_TOOL_ID = 'ai-image'
 const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
@@ -520,7 +521,7 @@ function createBrowserImportedAssetId(kind, id, file) {
   return `browser-html-artboard-${kind}:${safeId}:${Date.now().toString(36)}:${safeName}`
 }
 
-async function readHtmlArtboardImageImport(kind, id) {
+async function readHtmlArtboardImageImport(kind, id, pageId) {
   const file = await selectHtmlArtboardImageFile()
   if (!file) return null
 
@@ -529,12 +530,27 @@ async function readHtmlArtboardImageImport(kind, id) {
   }
 
   const dataUrl = await blobToDataUrl(file)
+  const response = await fetch(PAGE_ASSET_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      pageId,
+      fileName: file.name,
+      dataUrl
+    })
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to import image asset: ${response.status}`)
+  }
+
+  const uploaded = await response.json()
   return {
-    assetId: createBrowserImportedAssetId(kind, id, file),
-    assetUrl: dataUrl,
-    fileName: file.name,
-    mimeType: file.type,
-    fileSize: file.size
+    assetId: createBrowserImportedAssetId(kind, id, { name: uploaded.fileName ?? file.name }),
+    assetUrl: uploaded.assetUrl,
+    fileName: uploaded.fileName ?? file.name,
+    relativePath: uploaded.relativePath ?? null,
+    mimeType: uploaded.mimeType ?? file.type,
+    fileSize: Number.isFinite(uploaded.fileSize) ? uploaded.fileSize : file.size
   }
 }
 
@@ -1423,7 +1439,11 @@ function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selected
 
   async function importBackgroundImage() {
     try {
-      const imageImport = await readHtmlArtboardImageImport('background', runtimeDocument.id)
+      const imageImport = await readHtmlArtboardImageImport(
+        'background',
+        runtimeDocument.id,
+        selectedShape.parentId ?? editor.getCurrentPageId()
+      )
       if (!imageImport) return
 
       const updatedDocument = attachExternalBackgroundImageToHtmlArtboard(
@@ -1432,6 +1452,7 @@ function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selected
           backgroundAssetId: imageImport.assetId,
           backgroundAssetUrl: imageImport.assetUrl,
           fileName: imageImport.fileName,
+          relativePath: imageImport.relativePath,
           mimeType: imageImport.mimeType,
           fileSize: imageImport.fileSize
         },
@@ -2307,7 +2328,11 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
 
   async function importPatchImageAsset() {
     try {
-      const imageImport = await readHtmlArtboardImageImport('fusion-patch', patch.id)
+      const imageImport = await readHtmlArtboardImageImport(
+        'fusion-patch',
+        patch.id,
+        selectedShape.parentId ?? editor.getCurrentPageId()
+      )
       if (!imageImport) return
 
       const updatedDocument = attachExternalFusionPatchImageToHtmlArtboard(
@@ -2317,6 +2342,7 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
           patchAssetId: imageImport.assetId,
           patchAssetUrl: imageImport.assetUrl,
           fileName: imageImport.fileName,
+          relativePath: imageImport.relativePath,
           mimeType: imageImport.mimeType,
           fileSize: imageImport.fileSize
         },

@@ -240,6 +240,26 @@ function sanitizeAssetFileName(name, fallbackName, mimeType) {
   return `${baseName || 'asset'}${extension}`
 }
 
+async function uniqueAssetFilePath(dir, requestedName) {
+  const extension = extname(requestedName)
+  const baseName = requestedName.slice(0, requestedName.length - extension.length) || 'asset'
+  let candidateName = requestedName
+  let candidatePath = join(dir, candidateName)
+  let counter = 1
+
+  while (true) {
+    try {
+      await stat(candidatePath)
+      candidateName = `${baseName}-${counter}${extension}`
+      candidatePath = join(dir, candidateName)
+      counter += 1
+    } catch (error) {
+      if (error.code === 'ENOENT') return { fileName: candidateName, filePath: candidatePath }
+      throw error
+    }
+  }
+}
+
 function parseDataUrl(src) {
   const match = /^data:([^;,]+)?(?:;[^,]*)?,(.*)$/s.exec(src)
   if (!match) return null
@@ -248,6 +268,10 @@ function parseDataUrl(src) {
   const isBase64 = /^data:[^,]*;base64,/i.test(src)
   const buffer = isBase64 ? Buffer.from(encoded, 'base64') : Buffer.from(decodeURIComponent(encoded))
   return { buffer, mimeType }
+}
+
+function isAllowedPageImageMimeType(mimeType) {
+  return mimeType === 'image/png' || mimeType === 'image/jpeg' || mimeType === 'image/webp'
 }
 
 function localAssetFilePathFromUrl(src) {
@@ -568,6 +592,66 @@ function canvasStoragePlugin() {
           res.statusCode = 405
           res.setHeader('allow', 'GET, PUT')
           res.end()
+        } catch (error) {
+          sendJson(res, 500, { error: error.message })
+        }
+      })
+
+      server.middlewares.use('/api/page-asset', async (req, res) => {
+        try {
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.setHeader('allow', 'POST')
+            res.end()
+            return
+          }
+
+          const body = await readRequestBody(req)
+          const payload = JSON.parse(body)
+          const pageId = typeof payload.pageId === 'string' && payload.pageId ? payload.pageId : ''
+          const dataUrl = typeof payload.dataUrl === 'string' ? parseDataUrl(payload.dataUrl) : null
+          if (!pageId) {
+            sendJson(res, 400, { error: 'pageId is required.' })
+            return
+          }
+          if (!dataUrl) {
+            sendJson(res, 400, { error: 'Expected image dataUrl.' })
+            return
+          }
+          if (!isAllowedPageImageMimeType(dataUrl.mimeType)) {
+            sendJson(res, 400, { error: 'Only PNG, JPEG, and WebP images are supported.' })
+            return
+          }
+
+          const destinationDir = pageAssetsDir(pageId)
+          if (!isSafeChildPath(canvasDir, destinationDir)) {
+            sendJson(res, 400, { error: 'Unsafe page assets directory.' })
+            return
+          }
+
+          const requestedName = sanitizeAssetFileName(
+            payload.fileName,
+            `${Date.now().toString(36)}${extensionFromMimeType(dataUrl.mimeType)}`,
+            dataUrl.mimeType
+          )
+          const { fileName, filePath } = await uniqueAssetFilePath(destinationDir, requestedName)
+          if (!isSafeChildPath(destinationDir, filePath)) {
+            sendJson(res, 400, { error: 'Unsafe page asset path.' })
+            return
+          }
+
+          await mkdir(destinationDir, { recursive: true })
+          await writeFile(filePath, dataUrl.buffer)
+
+          sendJson(res, 200, {
+            ok: true,
+            pageId,
+            fileName,
+            assetUrl: pageAssetUrl(pageId, fileName),
+            relativePath: relative(canvasDir, filePath).split(sep).join('/'),
+            mimeType: dataUrl.mimeType,
+            fileSize: dataUrl.buffer.length
+          })
         } catch (error) {
           sendJson(res, 500, { error: error.message })
         }
