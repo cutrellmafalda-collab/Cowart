@@ -459,15 +459,24 @@ function findHtmlArtboardFusionPatchLayerShape(editor, sourceShapeId, patchId) {
 
 function resolveHtmlArtboardSelection(editor, shape) {
   const runtimeDocument = cowartShapeToHtmlArtboard(shape)
-  if (runtimeDocument) return { runtimeDocument, shape, selectedShape: shape, textLayerShape: null }
+  if (runtimeDocument) {
+    return {
+      runtimeDocument,
+      shape,
+      selectedShape: shape,
+      textLayerShape: null,
+      fusionPatchLayerShape: null,
+      previewShape: null
+    }
+  }
 
-  if (
-    !(
-      (shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardPreview === true) ||
-      (shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardFusionPatchLayer === true) ||
-      (shape?.type === 'text' && shape?.meta?.cowartHtmlArtboardTextLayer === true)
-    )
-  ) {
+  const isPreviewShape = shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardPreview === true
+  const isFusionPatchLayerShape =
+    shape?.type === 'image' && shape?.meta?.cowartHtmlArtboardFusionPatchLayer === true
+  const isTextLayerShape =
+    shape?.type === 'text' && shape?.meta?.cowartHtmlArtboardTextLayer === true
+
+  if (!(isPreviewShape || isFusionPatchLayerShape || isTextLayerShape)) {
     return null
   }
 
@@ -481,7 +490,9 @@ function resolveHtmlArtboardSelection(editor, shape) {
         runtimeDocument: sourceRuntimeDocument,
         shape: sourceShape,
         selectedShape: shape,
-        textLayerShape: shape?.type === 'text' ? shape : null
+        textLayerShape: isTextLayerShape ? shape : null,
+        fusionPatchLayerShape: isFusionPatchLayerShape ? shape : null,
+        previewShape: isPreviewShape ? shape : null
       }
     : null
 }
@@ -1486,7 +1497,14 @@ function CowartHtmlArtboardPreviewControls() {
 
   if (!selectedHtmlArtboard) return null
 
-  const { runtimeDocument, shape, selectedShape, textLayerShape } = selectedHtmlArtboard
+  const {
+    runtimeDocument,
+    shape,
+    selectedShape,
+    textLayerShape,
+    fusionPatchLayerShape,
+    previewShape
+  } = selectedHtmlArtboard
   const srcDoc = createHtmlArtboardPreviewSrcDoc(runtimeDocument)
   const sourceSnapshot = createHtmlArtboardSourceSnapshot(runtimeDocument)
   const isChildLayerSelected = selectedShape?.id !== shape.id
@@ -1514,6 +1532,15 @@ function CowartHtmlArtboardPreviewControls() {
           </button>
         ) : null}
       </section>
+      <CowartHtmlArtboardLayerFocusControls
+        editor={editor}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+        activeShape={selectedShape}
+        textLayerShape={textLayerShape}
+        fusionPatchLayerShape={fusionPatchLayerShape}
+        previewShape={previewShape}
+      />
       <CowartHtmlArtboardCanvasPreviewControls
         editor={editor}
         runtimeDocument={runtimeDocument}
@@ -1564,6 +1591,192 @@ function CowartHtmlArtboardPreviewControls() {
         <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
       </details>
     </div>
+  )
+}
+
+function getCompactHtmlArtboardLayerLabel(value, fallback = '未命名图层') {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!text) return fallback
+  return text.length > 18 ? `${text.slice(0, 17)}…` : text
+}
+
+function getTextLayerShapeLabel(editor, selectedShape, textShape) {
+  try {
+    const layer = getTextLayerFromShape(editor, selectedShape, textShape)
+    return getCompactHtmlArtboardLayerLabel(
+      layer.text || layer.dataNode || textShape?.meta?.dataNode,
+      '文字行'
+    )
+  } catch {
+    return getCompactHtmlArtboardLayerLabel(textShape?.meta?.dataNode, '文字行')
+  }
+}
+
+function getFusionPatchById(runtimeDocument, patchId) {
+  if (typeof patchId !== 'string' || !patchId) return null
+  const patches = Array.isArray(runtimeDocument?.fusionPatches)
+    ? runtimeDocument.fusionPatches
+    : []
+
+  return patches.find((patch) => patch?.id === patchId) ?? null
+}
+
+function getFusionPatchLayerShapeLabel(runtimeDocument, fusionPatchLayerShape) {
+  const patch = getFusionPatchById(runtimeDocument, fusionPatchLayerShape?.meta?.fusionPatchId)
+  return getCompactHtmlArtboardLayerLabel(
+    patch?.name || patch?.sourceText || patch?.prompt || fusionPatchLayerShape?.meta?.fusionPatchId,
+    '融合图层'
+  )
+}
+
+function getHtmlArtboardActiveLayerLabel({
+  editor,
+  runtimeDocument,
+  selectedShape,
+  activeShape,
+  textLayerShape,
+  fusionPatchLayerShape,
+  previewShape
+}) {
+  if (textLayerShape) {
+    return `文字：${getTextLayerShapeLabel(editor, selectedShape, textLayerShape)}`
+  }
+
+  if (fusionPatchLayerShape) {
+    return `融合：${getFusionPatchLayerShapeLabel(runtimeDocument, fusionPatchLayerShape)}`
+  }
+
+  if (previewShape) return '画布缩略图'
+  if (activeShape?.id === selectedShape.id) return '整张海报'
+  return 'HTML 海报'
+}
+
+function CowartHtmlArtboardLayerFocusControls({
+  editor,
+  runtimeDocument,
+  selectedShape,
+  activeShape,
+  textLayerShape,
+  fusionPatchLayerShape,
+  previewShape
+}) {
+  const textLayerShapes = useValue(
+    'selected html artboard layer focus text shapes',
+    () => findHtmlArtboardTextLayerShapes(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const fusionPatchLayerShapes = useValue(
+    'selected html artboard layer focus fusion shapes',
+    () => findHtmlArtboardFusionPatchLayerShapes(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const canvasPreviewShape = useValue(
+    'selected html artboard layer focus preview shape',
+    () => findHtmlArtboardPreviewShape(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const activeLabel = getHtmlArtboardActiveLayerLabel({
+    editor,
+    runtimeDocument,
+    selectedShape,
+    activeShape,
+    textLayerShape,
+    fusionPatchLayerShape,
+    previewShape: previewShape ?? null
+  })
+
+  function selectLayer(shapeId) {
+    if (!shapeId) return
+    editor.select(shapeId)
+    editor.setCurrentTool('select.idle')
+  }
+
+  function getChipClassName(shapeId) {
+    return activeShape?.id === shapeId
+      ? 'cowart-html-layer-chip cowart-html-layer-chip-active'
+      : 'cowart-html-layer-chip'
+  }
+
+  return (
+    <section className="cowart-html-layer-focus" aria-label="HTML 海报当前图层">
+      <div className="cowart-html-preview-heading">
+        <span>当前图层</span>
+        <span>{activeLabel}</span>
+      </div>
+      <div className="cowart-html-layer-focus-current">
+        <span>正在调整</span>
+        <strong>{activeLabel}</strong>
+      </div>
+      <div className="cowart-html-layer-focus-group">
+        <span>海报</span>
+        <div className="cowart-html-layer-chip-row">
+          <button
+            aria-pressed={activeShape?.id === selectedShape.id}
+            className={getChipClassName(selectedShape.id)}
+            onClick={() => selectLayer(selectedShape.id)}
+            type="button"
+          >
+            整张海报
+          </button>
+          {canvasPreviewShape ? (
+            <button
+              aria-pressed={activeShape?.id === canvasPreviewShape.id}
+              className={getChipClassName(canvasPreviewShape.id)}
+              onClick={() => selectLayer(canvasPreviewShape.id)}
+              type="button"
+            >
+              画布缩略图
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {textLayerShapes.length > 0 ? (
+        <div className="cowart-html-layer-focus-group">
+          <span>文字行</span>
+          <div className="cowart-html-layer-chip-row">
+            {textLayerShapes.map((shape) => (
+              <button
+                aria-pressed={activeShape?.id === shape.id}
+                className={getChipClassName(shape.id)}
+                key={shape.id}
+                onClick={() => selectLayer(shape.id)}
+                title={getTextLayerShapeLabel(editor, selectedShape, shape)}
+                type="button"
+              >
+                {getTextLayerShapeLabel(editor, selectedShape, shape)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {fusionPatchLayerShapes.length > 0 ? (
+        <div className="cowart-html-layer-focus-group">
+          <span>融合图层</span>
+          <div className="cowart-html-layer-chip-row">
+            {fusionPatchLayerShapes.map((shape) => (
+              <button
+                aria-pressed={activeShape?.id === shape.id}
+                className={getChipClassName(shape.id)}
+                key={shape.id}
+                onClick={() => selectLayer(shape.id)}
+                title={getFusionPatchLayerShapeLabel(runtimeDocument, shape)}
+                type="button"
+              >
+                {getFusionPatchLayerShapeLabel(runtimeDocument, shape)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {textLayerShapes.length === 0 && fusionPatchLayerShapes.length === 0 ? (
+        <p className="cowart-html-layer-focus-empty">
+          生成可拖动文字或融合图层后，可在这里快速切换。
+        </p>
+      ) : null}
+    </section>
   )
 }
 
