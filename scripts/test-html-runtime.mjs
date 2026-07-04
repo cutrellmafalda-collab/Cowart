@@ -619,7 +619,7 @@ test('createHtmlArtboardTextLayersFromDocument applies poster visual roles', () 
   assert.equal(byNode.eyebrow.color, 'black')
   assert.equal(byNode.eyebrow.font, 'sans')
   assert.equal(byNode.detail.color, 'black')
-  assert.equal(byNode.cta.color, 'black')
+  assert.equal(byNode.cta.color, 'blue')
   assert.equal(byNode.cta.align, 'start')
 })
 

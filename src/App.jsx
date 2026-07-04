@@ -879,29 +879,164 @@ function drawHtmlArtboardAtmosphereBackground(context, runtimeDocument, width, h
   context.fillRect(0, 0, width, height)
 
   const blueGlow = context.createRadialGradient(width * 0.18, height * 0.74, 1, width * 0.18, height * 0.74, width * 0.46)
-  blueGlow.addColorStop(0, 'rgba(56,189,248,0.22)')
+  blueGlow.addColorStop(0, 'rgba(56,189,248,0.32)')
   blueGlow.addColorStop(1, 'rgba(56,189,248,0)')
   context.fillStyle = blueGlow
   context.fillRect(0, 0, width, height)
 
   context.save()
-  context.globalAlpha = 0.28
-  context.strokeStyle = 'rgba(255,255,255,0.88)'
-  context.lineWidth = Math.max(2, width * 0.006)
+  context.globalAlpha = 0.34
+  context.fillStyle = '#ffffff'
   context.beginPath()
-  context.moveTo(width * 0.12, height * 0.18)
-  context.bezierCurveTo(width * 0.34, height * 0.08, width * 0.58, height * 0.18, width * 0.88, height * 0.08)
+  context.roundRect(width * 0.07, height * 0.07, width * 0.86, height * 0.86, width * 0.055)
+  context.fill()
+  context.restore()
+
+  context.save()
+  context.globalAlpha = 0.62
+  context.strokeStyle = 'rgba(255,255,255,0.82)'
+  context.lineWidth = Math.max(2, width * 0.004)
+  context.beginPath()
+  context.moveTo(width * 0.1, height * 0.18)
+  context.bezierCurveTo(width * 0.33, height * 0.08, width * 0.56, height * 0.18, width * 0.9, height * 0.07)
   context.stroke()
   context.restore()
 
   context.save()
-  context.globalAlpha = 0.16
-  context.fillStyle = '#ffffff'
+  context.translate(width * 0.84, height * 0.11)
+  context.rotate(-0.55)
+  context.fillStyle = 'rgba(31, 120, 84, 0.48)'
+  for (let index = 0; index < 4; index += 1) {
+    context.save()
+    context.rotate(index * 0.58)
+    context.beginPath()
+    context.ellipse(0, height * 0.045 * index, width * 0.095, height * 0.026, 0, 0, Math.PI * 2)
+    context.fill()
+    context.restore()
+  }
+  context.restore()
+
+  const glassX = width * 0.63
+  const glassY = height * 0.34
+  const glassW = width * 0.24
+  const glassH = height * 0.38
+  context.save()
+  context.shadowColor = 'rgba(8, 47, 73, 0.22)'
+  context.shadowBlur = width * 0.045
+  context.shadowOffsetY = height * 0.025
+  const glassGradient = context.createLinearGradient(glassX, glassY, glassX + glassW, glassY + glassH)
+  glassGradient.addColorStop(0, 'rgba(255,255,255,0.68)')
+  glassGradient.addColorStop(0.5, 'rgba(125,211,252,0.35)')
+  glassGradient.addColorStop(1, 'rgba(14,116,144,0.18)')
+  context.fillStyle = glassGradient
   context.beginPath()
-  context.roundRect(width * 0.55, height * 0.09, width * 0.28, height * 0.14, width * 0.04)
+  context.roundRect(glassX, glassY, glassW, glassH, width * 0.035)
+  context.fill()
+  context.strokeStyle = 'rgba(255,255,255,0.74)'
+  context.lineWidth = Math.max(2, width * 0.005)
+  context.stroke()
+  context.restore()
+
+  context.save()
+  context.globalAlpha = 0.42
+  context.strokeStyle = 'rgba(255,255,255,0.9)'
+  context.lineWidth = Math.max(2, width * 0.006)
+  context.beginPath()
+  context.moveTo(glassX + glassW * 0.25, glassY + glassH * 0.08)
+  context.lineTo(glassX + glassW * 0.08, glassY + glassH * 0.76)
+  context.stroke()
+  context.restore()
+
+  const iceCubes = [
+    [0.69, 0.43, 0.08, -0.2],
+    [0.77, 0.53, 0.075, 0.22],
+    [0.68, 0.61, 0.07, 0.18]
+  ]
+  context.save()
+  context.strokeStyle = 'rgba(255,255,255,0.78)'
+  context.fillStyle = 'rgba(255,255,255,0.3)'
+  context.lineWidth = Math.max(1.5, width * 0.003)
+  for (const [x, y, size, rotate] of iceCubes) {
+    const cubeSize = width * size
+    context.save()
+    context.translate(width * x, height * y)
+    context.rotate(rotate)
+    context.beginPath()
+    context.roundRect(-cubeSize / 2, -cubeSize / 2, cubeSize, cubeSize, cubeSize * 0.2)
+    context.fill()
+    context.stroke()
+    context.restore()
+  }
+  context.restore()
+
+  function drawPeach(centerX, centerY, radius, rotation = 0) {
+    context.save()
+    context.translate(centerX, centerY)
+    context.rotate(rotation)
+    const peachGradient = context.createRadialGradient(-radius * 0.28, -radius * 0.35, 1, 0, 0, radius)
+    peachGradient.addColorStop(0, '#fff7ad')
+    peachGradient.addColorStop(0.48, '#fb923c')
+    peachGradient.addColorStop(1, '#f97316')
+    context.fillStyle = peachGradient
+    context.beginPath()
+    context.arc(0, 0, radius, 0, Math.PI * 2)
+    context.fill()
+    context.strokeStyle = 'rgba(255,255,255,0.72)'
+    context.lineWidth = Math.max(2, radius * 0.08)
+    context.stroke()
+    context.fillStyle = 'rgba(255,255,255,0.42)'
+    context.beginPath()
+    context.arc(-radius * 0.24, -radius * 0.28, radius * 0.22, 0, Math.PI * 2)
+    context.fill()
+    context.restore()
+  }
+
+  context.save()
+  context.shadowColor = 'rgba(14, 116, 144, 0.16)'
+  context.shadowBlur = width * 0.035
+  context.shadowOffsetY = height * 0.014
+  context.fillStyle = 'rgba(255,255,255,0.78)'
+  context.beginPath()
+  context.roundRect(width * 0.105, height * 0.81, width * 0.36, height * 0.078, width * 0.042)
+  context.fill()
+  context.restore()
+
+  drawPeach(width * 0.16, height * 0.93, width * 0.075, -0.22)
+  drawPeach(width * 0.78, height * 0.8, width * 0.115, 0.18)
+
+  context.save()
+  context.fillStyle = 'rgba(34, 197, 94, 0.52)'
+  context.beginPath()
+  context.ellipse(width * 0.32, height * 0.82, width * 0.05, height * 0.018, -0.55, 0, Math.PI * 2)
   context.fill()
   context.beginPath()
-  context.roundRect(width * 0.13, height * 0.77, width * 0.34, height * 0.12, width * 0.05)
+  context.ellipse(width * 0.68, height * 0.83, width * 0.06, height * 0.022, 0.55, 0, Math.PI * 2)
+  context.fill()
+  context.restore()
+
+  context.save()
+  context.globalAlpha = 0.45
+  context.fillStyle = '#ffffff'
+  const bubbles = [
+    [0.21, 0.27, 0.012],
+    [0.34, 0.18, 0.007],
+    [0.54, 0.29, 0.01],
+    [0.87, 0.3, 0.009],
+    [0.57, 0.75, 0.012],
+    [0.45, 0.82, 0.007]
+  ]
+  for (const [x, y, radius] of bubbles) {
+    context.beginPath()
+    context.arc(width * x, height * y, width * radius, 0, Math.PI * 2)
+    context.fill()
+  }
+  context.restore()
+
+  context.save()
+  context.globalAlpha = 0.2
+  context.fillStyle = '#ffffff'
+  context.beginPath()
+  context.roundRect(width * 0.09, height * 0.86, width * 0.82, height * 0.06, width * 0.04)
   context.fill()
   context.restore()
 }
@@ -1494,6 +1629,11 @@ function CowartHtmlArtboardPreviewControls() {
     },
     [editor]
   )
+  const [posterStatus, setPosterStatus] = useState('')
+
+  useEffect(() => {
+    setPosterStatus('')
+  }, [selectedHtmlArtboard?.shape?.id])
 
   if (!selectedHtmlArtboard) return null
 
@@ -1511,6 +1651,39 @@ function CowartHtmlArtboardPreviewControls() {
 
   function selectWholeArtboard() {
     editor.select(shape.id)
+  }
+
+  async function makePolishedPoster() {
+    try {
+      const baseDocument = createHtmlArtboardDocument({
+        id: runtimeDocument.id,
+        width: runtimeDocument.width,
+        height: runtimeDocument.height,
+        meta: {
+          ...(runtimeDocument.meta ?? {}),
+          preset: 'summer-peach-live-poster'
+        }
+      })
+      const textLayers = createHtmlArtboardTextLayersFromDocument(baseDocument, {
+        recreate: true
+      })
+      const updatedDocument = updateHtmlArtboardTextLayers(baseDocument, textLayers, {
+        recordMutationLog: false
+      })
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        shape,
+        updatedDocument,
+        'make-html-artboard-polished-poster'
+      )
+      upsertHtmlArtboardTextLayerShapes(editor, shape, textLayers)
+      await refreshHtmlArtboardCanvasPreview(editor, shape, updatedDocument)
+      editor.select(shape.id)
+      setPosterStatus('已做成漂亮测试海报')
+    } catch {
+      setPosterStatus('整理失败')
+    }
   }
 
   return (
@@ -1531,6 +1704,12 @@ function CowartHtmlArtboardPreviewControls() {
             选中整张海报
           </button>
         ) : null}
+        <div className="cowart-html-poster-actions">
+          <button type="button" onClick={makePolishedPoster}>
+            做成漂亮测试海报
+          </button>
+          {posterStatus ? <span>{posterStatus}</span> : null}
+        </div>
       </section>
       <CowartHtmlArtboardLayerFocusControls
         editor={editor}

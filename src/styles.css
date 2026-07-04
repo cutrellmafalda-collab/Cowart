@@ -209,6 +209,37 @@ body {
   background: var(--tl-color-muted-2);
 }
 
+.cowart-html-poster-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cowart-html-poster-actions button {
+  min-height: 30px;
+  padding: 0 12px;
+  color: #082f49;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  background: #e0faff;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: var(--tl-radius-2);
+  box-shadow: 0 10px 24px rgb(14 165 198 / 20%);
+  cursor: pointer;
+}
+
+.cowart-html-poster-actions button:hover {
+  background: #ffffff;
+}
+
+.cowart-html-poster-actions span {
+  color: rgb(255 255 255 / 82%);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .cowart-html-layer-focus {
   display: flex;
   flex-direction: column;

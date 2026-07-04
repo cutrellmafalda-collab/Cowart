@@ -7,40 +7,62 @@ const DEFAULT_HEIGHT = 1280
 const FORBIDDEN_UI_FIELDS = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
 const DEFAULT_HTML = `<section class="artboard" data-node="hero">
-  <p class="eyebrow" data-node="eyebrow">夏日限定</p>
-  <h1 data-node="headline">
-    <span data-node="headline-line-1">冰感桃桃</span>
-    <span data-node="headline-line-2">乌龙</span>
-  </h1>
-  <p class="subhead" data-node="subhead">清爽桃桃乌龙 · 今日上新</p>
-  <p class="detail" data-node="detail">底图负责氛围，文字每行都能单独拖动，局部图像作为 FusionPatch 覆盖。</p>
-  <button data-node="cta">立即尝鲜</button>
+  <div class="poster-copy">
+    <p class="eyebrow" data-node="eyebrow">夏日限定</p>
+    <h1 data-node="headline">
+      <span data-node="headline-line-1">冰感桃桃</span>
+      <span data-node="headline-line-2">乌龙</span>
+    </h1>
+    <p class="subhead" data-node="subhead">清爽桃桃乌龙 · 今日上新</p>
+    <p class="detail" data-node="detail">底图负责氛围，文字每行都能单独拖动，局部图像作为 FusionPatch 覆盖。</p>
+    <button data-node="cta">立即尝鲜 →</button>
+  </div>
 </section>`
 
 const DEFAULT_CSS = `.artboard {
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 22px;
-  padding: 112px 72px 88px;
-  color: #10202f;
-  font-family: Inter, "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  justify-content: flex-end;
+  padding: 108px 76px 86px;
+  color: #112233;
+  font-family: "Microsoft YaHei", Inter, ui-sans-serif, system-ui, sans-serif;
   background:
-    radial-gradient(circle at 78% 16%, rgba(255,255,255,.78), transparent 28%),
-    radial-gradient(circle at 20% 72%, rgba(56,189,248,.32), transparent 34%),
-    linear-gradient(160deg, #e8f7ff 0%, #f5fbff 46%, #ffe9d4 100%);
+    radial-gradient(circle at 82% 20%, rgba(255,255,255,.92), transparent 26%),
+    radial-gradient(circle at 10% 70%, rgba(56,189,248,.28), transparent 38%),
+    linear-gradient(165deg, #e7fbff 0%, #c7f0ff 43%, #ffe9bd 100%);
+}
+
+.artboard::before {
+  content: "";
+  position: absolute;
+  inset: 28px;
+  border: 1px solid rgba(255, 255, 255, .58);
+  border-radius: 34px;
+  pointer-events: none;
+}
+
+.poster-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 600px;
 }
 
 .artboard .eyebrow {
-  margin: 0 0 18px;
+  margin: 0 0 8px;
   width: max-content;
-  padding: 10px 18px;
+  padding: 9px 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .52);
-  font-size: 24px;
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 0 16px 42px rgba(14, 116, 144, .14);
+  font-size: 23px;
   font-weight: 800;
   letter-spacing: .16em;
 }
@@ -48,12 +70,13 @@ const DEFAULT_CSS = `.artboard {
 .artboard h1 {
   margin: 0;
   display: grid;
-  gap: 2px;
-  max-width: 610px;
-  font-size: 90px;
+  gap: 4px;
+  max-width: 620px;
+  font-size: 92px;
   line-height: .94;
   font-weight: 900;
   letter-spacing: -.05em;
+  text-shadow: 0 8px 24px rgba(4, 47, 74, .14);
 }
 
 .artboard h1 span {
@@ -61,7 +84,7 @@ const DEFAULT_CSS = `.artboard {
 }
 
 .artboard .subhead {
-  margin: 24px 0 0;
+  margin: 26px 0 0;
   max-width: 560px;
   font-size: 32px;
   line-height: 1.32;
@@ -71,7 +94,7 @@ const DEFAULT_CSS = `.artboard {
 .artboard .detail {
   margin: 0;
   max-width: 560px;
-  color: rgba(16, 32, 47, .72);
+  color: rgba(17, 34, 51, .72);
   font-size: 22px;
   line-height: 1.55;
 }
@@ -83,7 +106,8 @@ const DEFAULT_CSS = `.artboard {
   border: 0;
   border-radius: 999px;
   color: #ffffff;
-  background: #10324a;
+  background: linear-gradient(135deg, #0f4664, #0ea5c6);
+  box-shadow: 0 18px 38px rgba(14, 165, 198, .32);
   font-size: 22px;
   font-weight: 850;
 }`
@@ -92,8 +116,8 @@ const DEFAULT_BACKGROUND = {
   type: 'gradient',
   identity: 'summer-ice-live-poster-gradient-v1',
   description: 'No-text summer ice gradient background metadata for an HTML artboard source.',
-  prompt: 'no text, fresh summer ice poster background, soft blue highlights, warm product glow',
-  colors: ['#e8f7ff', '#f5fbff', '#ffe9d4']
+  prompt: 'no text, fresh peach iced tea poster background, glass, ice, fruit, clean title space',
+  colors: ['#e7fbff', '#c7f0ff', '#ffe9bd']
 }
 
 function isRecord(value) {
