@@ -1335,9 +1335,14 @@ function CowartHtmlArtboardPreviewControls() {
 
   if (!selectedHtmlArtboard) return null
 
-  const { runtimeDocument, shape, textLayerShape } = selectedHtmlArtboard
+  const { runtimeDocument, shape, selectedShape, textLayerShape } = selectedHtmlArtboard
   const srcDoc = createHtmlArtboardPreviewSrcDoc(runtimeDocument)
   const sourceSnapshot = createHtmlArtboardSourceSnapshot(runtimeDocument)
+  const isChildLayerSelected = selectedShape?.id !== shape.id
+
+  function selectWholeArtboard() {
+    editor.select(shape.id)
+  }
 
   return (
     <div className="cowart-html-artboard-preview-panel" aria-label="HTML 画板面板">
@@ -1348,6 +1353,15 @@ function CowartHtmlArtboardPreviewControls() {
             {runtimeDocument.width} × {runtimeDocument.height}
           </span>
         </div>
+        {isChildLayerSelected ? (
+          <button
+            className="cowart-html-select-artboard"
+            onClick={selectWholeArtboard}
+            type="button"
+          >
+            选中整张海报
+          </button>
+        ) : null}
       </section>
       <CowartHtmlArtboardCanvasPreviewControls
         editor={editor}

@@ -181,6 +181,24 @@ body {
   padding: 4px 2px 2px;
 }
 
+.cowart-html-select-artboard {
+  min-height: 28px;
+  padding: 0 10px;
+  align-self: flex-start;
+  color: var(--tl-color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+  cursor: pointer;
+}
+
+.cowart-html-select-artboard:hover {
+  background: var(--tl-color-muted-2);
+}
+
 .cowart-html-preview-heading {
   display: flex;
   align-items: center;
