@@ -330,13 +330,6 @@ body {
   margin: 0;
 }
 
-.cowart-html-text-layer-note {
-  margin: 0;
-  color: var(--tl-color-text-2);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
 .cowart-html-text-layer-actions {
   display: flex;
   align-items: center;
@@ -368,9 +361,6 @@ body {
 }
 
 .cowart-html-advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   padding: 8px 2px 0;
   border-top: 1px solid var(--tl-color-divider);
 }
@@ -383,6 +373,7 @@ body {
 }
 
 .cowart-html-advanced[open] {
+  display: grid;
   gap: 10px;
 }
 
@@ -471,13 +462,6 @@ body {
   color: #475569;
   background: #f8fafc;
   border-color: #cbd5e1;
-}
-
-.cowart-html-preview-status-note {
-  color: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0.78;
 }
 
 .cowart-html-artboard-source {
@@ -994,14 +978,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 2px;
-}
-
-.cowart-html-export-note {
-  margin: 0;
-  color: var(--tl-color-text-2);
-  font-size: 12px;
-  line-height: 1.4;
+  padding: 8px;
+  background: var(--tl-color-muted-2);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
 }
 
 .cowart-html-export-grid {
@@ -1011,10 +991,12 @@ body {
 
 .cowart-html-export-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  padding: 8px;
-  gap: 7px;
-  background: var(--tl-color-muted-2);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  min-height: 34px;
+  padding: 5px 6px 5px 8px;
+  gap: 6px;
+  background: var(--tl-color-panel);
   border: 1px solid var(--tl-color-muted-1);
   border-radius: var(--tl-radius-2);
 }
@@ -1030,7 +1012,7 @@ body {
 }
 
 .cowart-html-export-button {
-  min-height: 28px;
+  min-height: 24px;
   padding: 0 8px;
   color: var(--tl-color-text);
   font: inherit;

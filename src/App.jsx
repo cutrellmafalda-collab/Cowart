@@ -1375,8 +1375,9 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
+      <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
       <details className="cowart-html-advanced">
-        <summary>高级</summary>
+        <summary>源码与记录</summary>
         <CowartHtmlArtboardAiGenerationStatus />
         <section className="cowart-html-preview-section">
           <div className="cowart-html-preview-heading">
@@ -1396,7 +1397,6 @@ function CowartHtmlArtboardPreviewControls() {
           selectedShape={shape}
         />
         <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
-        <CowartHtmlArtboardExportControls runtimeDocument={runtimeDocument} />
       </details>
     </div>
   )
@@ -1492,7 +1492,11 @@ function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selected
       </div>
       <div className="cowart-html-background-meta">
         <span>类型：{formatBackgroundType(type)}</span>
-        {backgroundAssetUrl ? <code>{backgroundAssetUrl}</code> : <span>尚未附加背景图。</span>}
+        {backgroundAssetUrl ? (
+          <span>文件：{background.fileName || backgroundAssetUrl.split('/').pop()}</span>
+        ) : (
+          <span>尚未附加背景图。</span>
+        )}
       </div>
       <div className="cowart-html-background-actions">
         <button type="button" onClick={importBackgroundImage}>
@@ -1513,11 +1517,6 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
   )
   const freshness = compareHtmlArtboardPreviewFreshness(runtimeDocument, previewShape)
   const freshnessSummary = formatCanvasPreviewFreshness(freshness)
-  const freshnessNote = freshness.isMissing
-    ? '点击刷新，生成画布缩略图。'
-    : freshness.isStale
-      ? '点击刷新，让画布缩略图同步到最新内容。'
-      : ''
 
   useEffect(() => {
     setPreviewStatus('')
@@ -1541,9 +1540,6 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
         className={`cowart-html-preview-status cowart-html-preview-status-${freshness.status}`}
       >
         <span>{freshnessSummary}</span>
-        {freshnessNote ? (
-          <span className="cowart-html-preview-status-note">{freshnessNote}</span>
-        ) : null}
       </div>
       <div className="cowart-html-canvas-preview-action">
         <button
@@ -1740,7 +1736,7 @@ function CowartHtmlArtboardSelectedTextLayerControls({
 
   if (!textLayerShape || !currentLayer) return null
 
-  function applyTextLayerChanges() {
+  async function applyTextLayerChanges() {
     try {
       const nextScale = normalizeTextLayerScale(draftScale)
       const nextLayer = {
@@ -1784,6 +1780,7 @@ function CowartHtmlArtboardSelectedTextLayerControls({
         updatedDocument,
         'update-html-artboard-text-layer'
       )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
       editor.select(textLayerShape.id)
       setTextLayerStatus('已更新当前文字层')
     } catch {
@@ -1875,9 +1872,6 @@ function CowartHtmlArtboardSelectedTextLayerControls({
         </button>
         {textLayerStatus ? <span>{textLayerStatus}</span> : null}
       </div>
-      <p className="cowart-html-text-layer-note">
-        位置直接在画布拖动；改完文字、大小或颜色后，画布预览会提示需要刷新。
-      </p>
     </section>
   )
 }
@@ -1952,9 +1946,6 @@ function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selected
         <span>文字层</span>
         <span>{textLayerShapes.length || runtimeTextLayers.length}</span>
       </div>
-      <p className="cowart-html-text-layer-note">
-        生成后，每一行都能在画布里单独拖动、缩放和双击编辑。
-      </p>
       <div className="cowart-html-text-layer-actions">
         <button type="button" onClick={createOrRefreshTextLayers}>
           生成 / 刷新文字层
@@ -2226,6 +2217,24 @@ function parseFusionPatchRegionDraft(regionDraft) {
   return nextRegion
 }
 
+function isUsefulPatchTarget(target) {
+  const dataNode = typeof target?.dataNode === 'string' ? target.dataNode.trim() : ''
+  const sourceText = typeof target?.sourceText === 'string' ? target.sourceText.trim() : ''
+  if (!dataNode || !sourceText) return false
+  if (dataNode === 'poster' || dataNode === 'hero' || dataNode === 'artboard') return false
+  return sourceText.length <= 120
+}
+
+function getPreferredPatchTargetId(patchTargets) {
+  const preferredTarget =
+    patchTargets.find((target) => target.dataNode === 'headline-line-1') ??
+    patchTargets.find((target) => target.dataNode === 'headline') ??
+    patchTargets.find((target) => target.dataNode?.includes?.('headline')) ??
+    patchTargets[0]
+
+  return preferredTarget?.id ?? ''
+}
+
 function writeHtmlArtboardRuntimeDocument(editor, selectedShape, runtimeDocument, historyLabel) {
   editor.markHistoryStoppingPoint(historyLabel)
   editor.updateShapes([
@@ -2487,20 +2496,26 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
     () => extractHtmlArtboardPatchTargets(runtimeDocument),
     [runtimeDocument.html]
   )
+  const usefulPatchTargets = useMemo(() => {
+    const filteredTargets = patchTargets.filter(isUsefulPatchTarget)
+    return filteredTargets.length > 0 ? filteredTargets : patchTargets
+  }, [patchTargets])
   const [selectedTargetId, setSelectedTargetId] = useState('')
 
   useEffect(() => {
     setSelectedTargetId((currentTargetId) => {
-      if (patchTargets.some((target) => target.id === currentTargetId)) {
+      if (usefulPatchTargets.some((target) => target.id === currentTargetId)) {
         return currentTargetId
       }
 
-      return patchTargets[0]?.id ?? ''
+      return getPreferredPatchTargetId(usefulPatchTargets)
     })
-  }, [patchTargets, selectedShape.id])
+  }, [usefulPatchTargets, selectedShape.id])
 
   const selectedTarget =
-    patchTargets.find((target) => target.id === selectedTargetId) ?? patchTargets[0] ?? null
+    usefulPatchTargets.find((target) => target.id === selectedTargetId) ??
+    usefulPatchTargets[0] ??
+    null
 
   function addMockFusionPatch() {
     const targetPatchOptions = selectedTarget
@@ -2540,9 +2555,9 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
       <section className="cowart-html-patch-targets" aria-label="HTML 画板目标节点">
         <div className="cowart-html-preview-heading">
           <span>目标节点</span>
-          <span>找到 {patchTargets.length} 个</span>
+          <span>找到 {usefulPatchTargets.length} 个</span>
         </div>
-        {patchTargets.length === 0 ? (
+        {usefulPatchTargets.length === 0 ? (
           <p className="cowart-html-patch-target-empty">
             没有找到 data-node 目标节点。
           </p>
@@ -2554,7 +2569,7 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
                 value={selectedTarget?.id ?? ''}
                 onChange={(event) => setSelectedTargetId(event.target.value)}
               >
-                {patchTargets.map((target) => (
+                {usefulPatchTargets.map((target) => (
                   <option key={target.id} value={target.id}>
                     {target.label}
                   </option>
@@ -2639,8 +2654,8 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     {
       id: 'runtime-json',
       label: '运行时 JSON',
-      copyLabel: '复制 JSON',
-      downloadLabel: '下载 JSON',
+      copyLabel: '复制',
+      downloadLabel: '下载',
       value: exportBundle.json,
       mimeType: 'application/json',
       fileName: createHtmlArtboardExportFileName(
@@ -2651,8 +2666,8 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     {
       id: 'html',
       label: 'HTML',
-      copyLabel: '复制 HTML',
-      downloadLabel: '下载 HTML',
+      copyLabel: '复制',
+      downloadLabel: '下载',
       value: exportBundle.html,
       mimeType: 'text/html',
       fileName: createHtmlArtboardExportFileName(
@@ -2663,8 +2678,8 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     {
       id: 'css',
       label: 'CSS',
-      copyLabel: '复制 CSS',
-      downloadLabel: '下载 CSS',
+      copyLabel: '复制',
+      downloadLabel: '下载',
       value: exportBundle.css,
       mimeType: 'text/css',
       fileName: createHtmlArtboardExportFileName(
@@ -2675,8 +2690,8 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
     {
       id: 'standalone-html',
       label: '独立预览 HTML',
-      copyLabel: '复制独立 HTML',
-      downloadLabel: '下载独立 HTML',
+      copyLabel: '复制',
+      downloadLabel: '下载',
       value: exportBundle.standaloneHtml,
       mimeType: 'text/html',
       fileName: createHtmlArtboardExportFileName(
@@ -2734,7 +2749,6 @@ function CowartHtmlArtboardExportControls({ runtimeDocument }) {
         <span>导出</span>
         {exportStatus ? <span>{exportStatus}</span> : null}
       </div>
-      <p className="cowart-html-export-note">只导出当前 HTML 画板的运行时内容。</p>
       <div className="cowart-html-export-grid">
         {exportItems.map((item) => (
           <div key={item.id} className="cowart-html-export-row">
