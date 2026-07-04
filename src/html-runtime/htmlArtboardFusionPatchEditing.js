@@ -261,3 +261,89 @@ export function renameFusionPatchInHtmlArtboard(document, patchId, name, options
 export function updateFusionPatchRegionInHtmlArtboard(document, patchId, region, options = {}) {
   return updateFusionPatchInHtmlArtboard(document, patchId, { region }, options)
 }
+
+function createExternalImageMetadata(asset = {}) {
+  return {
+    fileName: typeof asset.fileName === 'string' && asset.fileName ? asset.fileName : null,
+    relativePath:
+      typeof asset.relativePath === 'string' && asset.relativePath ? asset.relativePath : null,
+    mimeType: typeof asset.mimeType === 'string' && asset.mimeType ? asset.mimeType : null,
+    fileSize: Number.isFinite(asset.fileSize) ? asset.fileSize : null
+  }
+}
+
+export function attachExternalFusionPatchImageToHtmlArtboard(
+  document,
+  patchId,
+  asset = {},
+  request = {},
+  options = {}
+) {
+  const runtimeDocument = ensureHtmlArtboardDocument(document)
+  const patchIndex = getPatchIndex(runtimeDocument, patchId)
+  if (patchIndex === -1) return runtimeDocument
+
+  if (typeof asset.patchAssetId !== 'string' || !asset.patchAssetId) {
+    return runtimeDocument
+  }
+
+  if (typeof asset.patchAssetUrl !== 'string' || !asset.patchAssetUrl) {
+    return runtimeDocument
+  }
+
+  const previousPatch = runtimeDocument.fusionPatches[patchIndex]
+  const provider =
+    typeof request.provider === 'string' && request.provider
+      ? request.provider
+      : 'external-image-gen'
+  const externalImage = createExternalImageMetadata(asset)
+  const generationRequest = isRecord(request.generationRequest)
+    ? deepClone(request.generationRequest)
+    : null
+  const nextPatch = ensureFusionPatch({
+    ...previousPatch,
+    patchAssetId: asset.patchAssetId,
+    patchAssetUrl: asset.patchAssetUrl,
+    provider,
+    status: typeof request.status === 'string' && request.status ? request.status : 'generated',
+    updatedAt: new Date().toISOString(),
+    meta: {
+      ...previousPatch.meta,
+      externalImage,
+      sourceImageFile: externalImage,
+      generationRequest
+    }
+  })
+  let updatedDocument = getUpdatedDocumentWithPatch(runtimeDocument, patchIndex, nextPatch)
+
+  updatedDocument = appendPatchMutations(
+    updatedDocument,
+    [
+      createHtmlArtboardMutation(
+        'fusion_patch_external_asset_attach',
+        {
+          patchId,
+          provider,
+          patchAssetId: nextPatch.patchAssetId,
+          patchAssetUrl: nextPatch.patchAssetUrl,
+          previousPatch: deepClone(previousPatch),
+          nextPatch: deepClone(nextPatch),
+          generationRequest
+        },
+        getMutationOptions({
+          ...options,
+          mutationOptions: {
+            ...options.mutationOptions,
+            meta: {
+              ...options.mutationOptions?.meta,
+              source: options.mutationOptions?.meta?.source ?? 'html-artboard-fusion-patch-panel'
+            }
+          }
+        })
+      )
+    ],
+    options
+  )
+
+  return updateDocumentFingerprint(updatedDocument)
+}

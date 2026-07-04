@@ -23,6 +23,7 @@ import {
 } from '../src/html-runtime/cowartHtmlBridge.js'
 import { updateHtmlArtboardSource } from '../src/html-runtime/htmlArtboardEditing.js'
 import {
+  attachExternalFusionPatchImageToHtmlArtboard,
   deleteFusionPatchFromHtmlArtboard,
   renameFusionPatchInHtmlArtboard,
   setFusionPatchVisibilityInHtmlArtboard,
@@ -2336,6 +2337,100 @@ test('visible false patch does not affect thumbnail overlay rendering', () => {
 
   assert.equal(overlay.includes('Visible Overlay Patch'), true)
   assert.equal(overlay.includes('Hidden Overlay Patch'), false)
+})
+
+test('attachExternalFusionPatchImageToHtmlArtboard attaches external image asset', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:external-asset' })
+  const updated = attachExternalFusionPatchImageToHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id,
+    {
+      patchAssetId: 'external-patch-asset:test',
+      patchAssetUrl: 'data:image/png;base64,external-patch',
+      fileName: 'external-patch.png',
+      mimeType: 'image/png',
+      fileSize: 123
+    },
+    { provider: 'browser-file-import' }
+  )
+
+  assert.equal(updated.fusionPatches[0].patchAssetId, 'external-patch-asset:test')
+  assert.equal(updated.fusionPatches[0].patchAssetUrl, 'data:image/png;base64,external-patch')
+  assert.equal(updated.fusionPatches[0].status, 'generated')
+  assert.equal(updated.fusionPatches[0].provider, 'browser-file-import')
+})
+
+test('attachExternalFusionPatchImageToHtmlArtboard records external attach mutation', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:external-mutation' })
+  const updated = attachExternalFusionPatchImageToHtmlArtboard(
+    createHtmlArtboardDocument({ fusionPatches: [patch] }),
+    patch.id,
+    {
+      patchAssetId: 'external-patch-asset:mutation',
+      patchAssetUrl: 'data:image/png;base64,external-patch'
+    },
+    { provider: 'browser-file-import', generationRequest: { prompt: 'External image' } }
+  )
+  const mutation = updated.mutationLog.at(-1)
+
+  assert.equal(mutation.type, 'fusion_patch_external_asset_attach')
+  assert.equal(mutation.payload.patchId, patch.id)
+  assert.equal(mutation.payload.patchAssetId, 'external-patch-asset:mutation')
+  assert.equal(mutation.payload.provider, 'browser-file-import')
+  assert.deepEqual(mutation.payload.generationRequest, { prompt: 'External image' })
+})
+
+test('attachExternalFusionPatchImageToHtmlArtboard preserves html and css', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:external-preserve' })
+  const document = createHtmlArtboardDocument({
+    html: '<section>Keep HTML</section>',
+    css: 'section { color: red; }',
+    fusionPatches: [patch]
+  })
+  const updated = attachExternalFusionPatchImageToHtmlArtboard(document, patch.id, {
+    patchAssetId: 'external-patch-asset:preserve',
+    patchAssetUrl: 'data:image/png;base64,external-patch'
+  })
+
+  assert.equal(updated.html, document.html)
+  assert.equal(updated.css, document.css)
+})
+
+test('attachExternalFusionPatchImageToHtmlArtboard recalculates renderFingerprint', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:external-fingerprint' })
+  const document = withRenderFingerprint(createHtmlArtboardDocument({ fusionPatches: [patch] }))
+  const updated = attachExternalFusionPatchImageToHtmlArtboard(document, patch.id, {
+    patchAssetId: 'external-patch-asset:fingerprint',
+    patchAssetUrl: 'data:image/png;base64,external-patch'
+  })
+
+  assert.notEqual(updated.renderFingerprint, document.renderFingerprint)
+  assert.equal(updated.renderFingerprint, createRenderFingerprint(updated))
+})
+
+test('attachExternalFusionPatchImageToHtmlArtboard does not mutate input', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:external-immutable' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const before = JSON.stringify(document)
+
+  attachExternalFusionPatchImageToHtmlArtboard(document, patch.id, {
+    patchAssetId: 'external-patch-asset:immutable',
+    patchAssetUrl: 'data:image/png;base64,external-patch'
+  })
+
+  assert.equal(JSON.stringify(document), before)
+})
+
+test('attachExternalFusionPatchImageToHtmlArtboard handles missing patch safely', () => {
+  const patch = createFusionPatchPlaceholder({ id: 'patch:external-kept' })
+  const document = createHtmlArtboardDocument({ fusionPatches: [patch] })
+  const updated = attachExternalFusionPatchImageToHtmlArtboard(document, 'patch:missing', {
+    patchAssetId: 'external-patch-asset:missing',
+    patchAssetUrl: 'data:image/png;base64,external-patch'
+  })
+
+  assert.equal(updated.fusionPatches[0].patchAssetUrl, null)
+  assert.equal(updated.mutationLog.length, 0)
 })
 
 test('createMockFusionPatchAsset returns data URL', () => {

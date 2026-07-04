@@ -53,7 +53,9 @@ import {
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
 import { createHtmlArtboardDocument } from './html-runtime/htmlCanvasDocument.js'
+import { attachExternalBackgroundImageToHtmlArtboard } from './html-runtime/htmlArtboardBackground.js'
 import {
+  attachExternalFusionPatchImageToHtmlArtboard,
   deleteFusionPatchFromHtmlArtboard,
   setFusionPatchVisibilityInHtmlArtboard,
   updateFusionPatchInHtmlArtboard
@@ -496,6 +498,44 @@ function blobToDataUrl(blob) {
     reader.addEventListener('error', () => reject(reader.error ?? new Error('Failed to read blob')))
     reader.readAsDataURL(blob)
   })
+}
+
+const HTML_ARTBOARD_IMPORT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+
+function selectHtmlArtboardImageFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/png,image/jpeg,image/webp'
+    input.addEventListener('change', () => {
+      resolve(input.files?.[0] ?? null)
+    })
+    input.click()
+  })
+}
+
+function createBrowserImportedAssetId(kind, id, file) {
+  const safeId = String(id ?? 'asset').replace(/[^a-z0-9_-]+/gi, '-')
+  const safeName = String(file?.name ?? 'image').replace(/[^a-z0-9_.-]+/gi, '-')
+  return `browser-html-artboard-${kind}:${safeId}:${Date.now().toString(36)}:${safeName}`
+}
+
+async function readHtmlArtboardImageImport(kind, id) {
+  const file = await selectHtmlArtboardImageFile()
+  if (!file) return null
+
+  if (!HTML_ARTBOARD_IMPORT_IMAGE_TYPES.has(file.type)) {
+    throw new Error('Unsupported image type')
+  }
+
+  const dataUrl = await blobToDataUrl(file)
+  return {
+    assetId: createBrowserImportedAssetId(kind, id, file),
+    assetUrl: dataUrl,
+    fileName: file.name,
+    mimeType: file.type,
+    fileSize: file.size
+  }
 }
 
 function loadPreviewImage(src) {
@@ -1296,7 +1336,11 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
-      <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
+      <CowartHtmlArtboardBackgroundSummary
+        editor={editor}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+      />
       <CowartHtmlArtboardSelectedTextLayerControls
         editor={editor}
         runtimeDocument={runtimeDocument}
@@ -1361,7 +1405,8 @@ function formatBackgroundType(type) {
   return type
 }
 
-function CowartHtmlArtboardBackgroundSummary({ runtimeDocument }) {
+function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selectedShape }) {
+  const [backgroundStatus, setBackgroundStatus] = useState('')
   const background = runtimeDocument.background ?? {}
   const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
   const type = typeof background.type === 'string' && background.type ? background.type : 'unknown'
@@ -1369,8 +1414,52 @@ function CowartHtmlArtboardBackgroundSummary({ runtimeDocument }) {
     typeof background.status === 'string' && background.status
       ? background.status
       : backgroundAssetUrl
-        ? 'attached'
-        : 'metadata'
+      ? 'attached'
+      : 'metadata'
+
+  useEffect(() => {
+    setBackgroundStatus('')
+  }, [selectedShape.id, backgroundAssetUrl, runtimeDocument.renderFingerprint])
+
+  async function importBackgroundImage() {
+    try {
+      const imageImport = await readHtmlArtboardImageImport('background', runtimeDocument.id)
+      if (!imageImport) return
+
+      const updatedDocument = attachExternalBackgroundImageToHtmlArtboard(
+        runtimeDocument,
+        {
+          backgroundAssetId: imageImport.assetId,
+          backgroundAssetUrl: imageImport.assetUrl,
+          fileName: imageImport.fileName,
+          mimeType: imageImport.mimeType,
+          fileSize: imageImport.fileSize
+        },
+        {
+          provider: 'browser-file-import',
+          prompt: background.prompt
+        },
+        {
+          mutationOptions: {
+            meta: {
+              source: 'html-artboard-background-panel'
+            }
+          }
+        }
+      )
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'import-html-artboard-background-image'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      setBackgroundStatus('背景图已导入，画布预览已刷新')
+    } catch {
+      setBackgroundStatus('导入失败：请选择 PNG / JPG / WebP')
+    }
+  }
 
   return (
     <section className="cowart-html-background" aria-label="HTML 画板背景">
@@ -1381,6 +1470,12 @@ function CowartHtmlArtboardBackgroundSummary({ runtimeDocument }) {
       <div className="cowart-html-background-meta">
         <span>类型：{formatBackgroundType(type)}</span>
         {backgroundAssetUrl ? <code>{backgroundAssetUrl}</code> : <span>尚未附加背景图。</span>}
+      </div>
+      <div className="cowart-html-background-actions">
+        <button type="button" onClick={importBackgroundImage}>
+          导入背景图
+        </button>
+        {backgroundStatus ? <span>{backgroundStatus}</span> : null}
       </div>
     </section>
   )
@@ -2210,6 +2305,52 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
     )
   }
 
+  async function importPatchImageAsset() {
+    try {
+      const imageImport = await readHtmlArtboardImageImport('fusion-patch', patch.id)
+      if (!imageImport) return
+
+      const updatedDocument = attachExternalFusionPatchImageToHtmlArtboard(
+        runtimeDocument,
+        patch.id,
+        {
+          patchAssetId: imageImport.assetId,
+          patchAssetUrl: imageImport.assetUrl,
+          fileName: imageImport.fileName,
+          mimeType: imageImport.mimeType,
+          fileSize: imageImport.fileSize
+        },
+        {
+          provider: 'browser-file-import',
+          generationRequest: {
+            prompt: draftPrompt,
+            sourceText: patch.sourceText ?? '',
+            selector: patch.selector ?? '',
+            region: parseFusionPatchRegionDraft(draftRegion) ?? patch.region
+          }
+        },
+        {
+          mutationOptions: {
+            meta: {
+              source: 'html-artboard-fusion-patch-panel'
+            }
+          }
+        }
+      )
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'import-html-artboard-fusion-patch-image'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      setPatchStatus('图片素材已导入，画布预览已刷新')
+    } catch {
+      setPatchStatus('导入失败：请选择 PNG / JPG / WebP')
+    }
+  }
+
   function updateRegionDraft(field, value) {
     setDraftRegion((region) => ({
       ...region,
@@ -2296,6 +2437,13 @@ function CowartHtmlFusionPatchEditor({ editor, runtimeDocument, selectedShape, p
           onClick={generateMockPatchAsset}
         >
           生成模拟素材
+        </button>
+        <button
+          aria-label={`导入融合图层图片素材 ${patch.id}`}
+          type="button"
+          onClick={importPatchImageAsset}
+        >
+          导入图片素材
         </button>
         {patchStatus ? <span>{patchStatus}</span> : null}
       </div>

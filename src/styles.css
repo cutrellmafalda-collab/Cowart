@@ -411,6 +411,37 @@ body {
   font-size: 10px;
 }
 
+.cowart-html-background-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cowart-html-background-actions button {
+  height: 28px;
+  padding: 0 10px;
+  color: var(--tl-color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--tl-color-panel);
+  border: 1px solid var(--tl-color-muted-1);
+  border-radius: var(--tl-radius-2);
+  cursor: pointer;
+}
+
+.cowart-html-background-actions button:hover {
+  background: #fff;
+}
+
+.cowart-html-background-actions span {
+  color: var(--tl-color-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
 .cowart-html-preview-status {
   display: grid;
   gap: 4px;
