@@ -503,6 +503,31 @@ function blobToDataUrl(blob) {
   })
 }
 
+async function writeTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('Copy command failed')
+    }
+  } finally {
+    textarea.remove()
+  }
+}
+
 const HTML_ARTBOARD_IMPORT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 function selectHtmlArtboardImageFile() {
@@ -1717,6 +1742,9 @@ function CowartHtmlArtboardSelectedTextLayerControls({
   const [draftAlign, setDraftAlign] = useState('start')
   const [draftVisible, setDraftVisible] = useState(true)
   const [textLayerStatus, setTextLayerStatus] = useState('')
+  const [artPrompt, setArtPrompt] = useState('')
+  const [artTextStatus, setArtTextStatus] = useState('')
+  const [artRequestText, setArtRequestText] = useState('')
 
   const currentLayer = useMemo(() => {
     if (!textLayerShape) return null
@@ -1745,7 +1773,15 @@ function CowartHtmlArtboardSelectedTextLayerControls({
   ])
 
   useEffect(() => {
+    if (!currentLayer) return
+
+    setArtPrompt(createDefaultArtTextPrompt(currentLayer))
+  }, [currentLayer?.id, currentLayer?.text])
+
+  useEffect(() => {
     setTextLayerStatus('')
+    setArtTextStatus('')
+    setArtRequestText('')
   }, [currentLayer?.id])
 
   if (!textLayerShape || !currentLayer) return null
@@ -1799,6 +1835,139 @@ function CowartHtmlArtboardSelectedTextLayerControls({
       setTextLayerStatus('已更新当前文字层')
     } catch {
       setTextLayerStatus('文字层更新失败')
+    }
+  }
+
+  function writePreparedArtTextPatch(updatedDocument, patch, historyLabel) {
+    if (!patch) {
+      setArtTextStatus('没有可用的艺术字图层')
+      return false
+    }
+
+    writeHtmlArtboardRuntimeDocument(editor, selectedShape, updatedDocument, historyLabel)
+    return true
+  }
+
+  function prepareArtTextPatch() {
+    try {
+      const { updatedDocument, patch } = prepareArtTextFusionPatchDocument(
+        runtimeDocument,
+        currentLayer,
+        artPrompt
+      )
+      const didWrite = writePreparedArtTextPatch(
+        updatedDocument,
+        patch,
+        'prepare-html-artboard-art-text-patch'
+      )
+      if (!didWrite) return null
+
+      setArtTextStatus('已准备艺术字图层')
+      return { updatedDocument, patch }
+    } catch {
+      setArtTextStatus('艺术字图层准备失败')
+      return null
+    }
+  }
+
+  async function copyArtTextGenerationRequest() {
+    const prepared = prepareArtTextPatch()
+    if (!prepared) return
+
+    try {
+      const request = createArtTextGenerationRequest(
+        prepared.updatedDocument,
+        selectedShape,
+        prepared.patch
+      )
+      const requestText = JSON.stringify(request, null, 2)
+      setArtRequestText(requestText)
+      try {
+        await writeTextToClipboard(requestText)
+        setArtTextStatus('已复制生图任务')
+      } catch {
+        setArtTextStatus('已生成任务，可手动复制')
+      }
+    } catch {
+      setArtTextStatus('任务生成失败')
+    }
+  }
+
+  async function generateMockArtTextAsset() {
+    try {
+      const prepared = prepareArtTextPatch()
+      if (!prepared) return
+
+      const updatedDocument = generateMockFusionPatchAssetForHtmlArtboard(
+        prepared.updatedDocument,
+        prepared.patch.id
+      )
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'generate-html-artboard-art-text-mock-asset'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      editor.select(textLayerShape.id)
+      setArtTextStatus('已生成占位艺术字')
+    } catch {
+      setArtTextStatus('生成失败')
+    }
+  }
+
+  async function importArtTextImageAsset() {
+    try {
+      const prepared = prepareArtTextPatch()
+      if (!prepared) return
+
+      const generationRequest = createArtTextGenerationRequest(
+        prepared.updatedDocument,
+        selectedShape,
+        prepared.patch
+      )
+      const imageImport = await readHtmlArtboardImageImport(
+        'fusion-patch',
+        prepared.patch.id,
+        selectedShape.parentId ?? editor.getCurrentPageId()
+      )
+      if (!imageImport) return
+
+      const updatedDocument = attachExternalFusionPatchImageToHtmlArtboard(
+        prepared.updatedDocument,
+        prepared.patch.id,
+        {
+          patchAssetId: imageImport.assetId,
+          patchAssetUrl: imageImport.assetUrl,
+          fileName: imageImport.fileName,
+          relativePath: imageImport.relativePath,
+          mimeType: imageImport.mimeType,
+          fileSize: imageImport.fileSize
+        },
+        {
+          provider: 'codex-image-gen',
+          generationRequest
+        },
+        {
+          mutationOptions: {
+            meta: {
+              source: 'html-artboard-art-text-panel'
+            }
+          }
+        }
+      )
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'import-html-artboard-art-text-image'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      editor.select(textLayerShape.id)
+      setArtTextStatus('艺术字图片已导入')
+    } catch {
+      setArtTextStatus('导入失败：请选择 PNG / JPG / WebP')
     }
   }
 
@@ -1886,6 +2055,43 @@ function CowartHtmlArtboardSelectedTextLayerControls({
         </button>
         {textLayerStatus ? <span>{textLayerStatus}</span> : null}
       </div>
+      <section className="cowart-html-art-text" aria-label="艺术字融合">
+        <div className="cowart-html-preview-heading">
+          <span>艺术字融合</span>
+          <span>{currentLayer.dataNode || '文字层'}</span>
+        </div>
+        <label className="cowart-html-text-layer-field">
+          <span>艺术字提示词</span>
+          <textarea
+            value={artPrompt}
+            onChange={(event) => setArtPrompt(event.target.value)}
+            rows={3}
+          />
+        </label>
+        <div className="cowart-html-art-text-actions">
+          <button type="button" onClick={prepareArtTextPatch}>
+            准备图层
+          </button>
+          <button type="button" onClick={copyArtTextGenerationRequest}>
+            复制生图任务
+          </button>
+          <button type="button" onClick={importArtTextImageAsset}>
+            导入艺术字图片
+          </button>
+          <button type="button" onClick={generateMockArtTextAsset}>
+            生成占位效果
+          </button>
+          {artTextStatus ? <span>{artTextStatus}</span> : null}
+        </div>
+        {artRequestText ? (
+          <textarea
+            aria-label="艺术字生图任务 JSON"
+            className="cowart-html-art-text-request"
+            readOnly
+            value={artRequestText}
+          />
+        ) : null}
+      </section>
     </section>
   )
 }
@@ -2262,6 +2468,160 @@ function writeHtmlArtboardRuntimeDocument(editor, selectedShape, runtimeDocument
       }
     }
   ])
+}
+
+function createDefaultArtTextPrompt(layer) {
+  const text = String(layer?.text || layer?.sourceText || '').trim() || '这行文字'
+  return `把「${text}」做成透明背景的 3D 艺术字，保留文字可读性，适合当前海报风格，只生成覆盖该文字区域的图片，不要修改 HTML/CSS。`
+}
+
+function createArtTextPatchName(layer) {
+  const text = String(layer?.text || layer?.sourceText || '').trim()
+  return text ? `艺术字：${text}` : '艺术字融合层'
+}
+
+function createArtTextPatchRegion(runtimeDocument, layer) {
+  const width = Number(runtimeDocument?.width) || 720
+  const height = Number(runtimeDocument?.height) || 1280
+  const x = Number(layer?.x) || 0
+  const y = Number(layer?.y) || 0
+  const w = Math.max(1, Number(layer?.w) || 240)
+  const h = Math.max(1, Number(layer?.h) || 64)
+  const padX = Math.max(16, Math.round((Number(layer?.fontSize) || 32) * 0.36))
+  const padY = Math.max(12, Math.round((Number(layer?.fontSize) || 32) * 0.24))
+  const nextX = Math.max(0, Math.round(x - padX))
+  const nextY = Math.max(0, Math.round(y - padY))
+  const maxW = Math.max(1, width - nextX)
+  const maxH = Math.max(1, height - nextY)
+
+  return {
+    x: nextX,
+    y: nextY,
+    w: Math.min(maxW, Math.round(w + padX * 2)),
+    h: Math.min(maxH, Math.round(h + padY * 2))
+  }
+}
+
+function findArtTextFusionPatch(runtimeDocument, layer) {
+  const patches = Array.isArray(runtimeDocument?.fusionPatches)
+    ? runtimeDocument.fusionPatches
+    : []
+  const selector = typeof layer?.selector === 'string' ? layer.selector : ''
+  const layerId = typeof layer?.id === 'string' ? layer.id : ''
+
+  return (
+    patches.find((patch) => patch?.meta?.runtimeTextLayerId === layerId) ??
+    patches.find(
+      (patch) =>
+        selector &&
+        (patch?.selector === selector || patch?.sourceSelector === selector)
+    ) ??
+    null
+  )
+}
+
+function createArtTextPatchOptions(runtimeDocument, layer, prompt) {
+  const text = String(layer?.text || layer?.sourceText || '').trim()
+  const selector = typeof layer?.selector === 'string' && layer.selector ? layer.selector : null
+
+  return {
+    selector,
+    sourceSelector: selector,
+    sourceText: text,
+    name: createArtTextPatchName(layer),
+    prompt: String(prompt || '').trim() || createDefaultArtTextPrompt(layer),
+    region: createArtTextPatchRegion(runtimeDocument, layer),
+    visible: true,
+    provider: 'external-image-gen',
+    status: 'placeholder',
+    meta: {
+      purpose: 'art-text',
+      runtimeTextLayerId: layer?.id ?? null,
+      dataNode: layer?.dataNode ?? null
+    }
+  }
+}
+
+function prepareArtTextFusionPatchDocument(runtimeDocument, layer, prompt) {
+  const patchOptions = createArtTextPatchOptions(runtimeDocument, layer, prompt)
+  const existingPatch = findArtTextFusionPatch(runtimeDocument, layer)
+  const updatedDocument = existingPatch
+    ? updateFusionPatchInHtmlArtboard(runtimeDocument, existingPatch.id, {
+        ...patchOptions,
+        meta: {
+          ...existingPatch.meta,
+          ...patchOptions.meta
+        }
+      })
+    : addFusionPatchPlaceholderToHtmlArtboard(runtimeDocument, patchOptions)
+  const patch = existingPatch
+    ? updatedDocument.fusionPatches.find((item) => item.id === existingPatch.id)
+    : updatedDocument.fusionPatches.at(-1)
+
+  return { updatedDocument, patch }
+}
+
+function createArtTextGenerationRequest(runtimeDocument, selectedShape, patch) {
+  const region = parseFusionPatchRegionDraft(createFusionPatchRegionDraft(patch?.region)) ?? {
+    x: 0,
+    y: 0,
+    w: 1024,
+    h: 512
+  }
+  const sourceText = String(patch?.sourceText || '').trim()
+  const selector = patch?.selector || patch?.sourceSelector || null
+
+  return {
+    kind: 'cowart-fusion-patch-art-text-generation-request',
+    version: 1,
+    shapeId: selectedShape.id,
+    documentId: runtimeDocument.id,
+    patchId: patch.id,
+    selector,
+    sourceSelector: patch?.sourceSelector ?? selector,
+    sourceText,
+    region,
+    prompt: patch?.prompt ?? '',
+    artboard: {
+      width: runtimeDocument.width,
+      height: runtimeDocument.height,
+      renderFingerprint: runtimeDocument.renderFingerprint,
+      mutationCount: runtimeDocument.mutationLog.length,
+      fusionPatchCount: runtimeDocument.fusionPatches.length
+    },
+    output: {
+      format: 'png',
+      transparentBackground: true,
+      width: Math.max(1, Math.round(region.w)),
+      height: Math.max(1, Math.round(region.h))
+    },
+    suggestedImagePrompt: [
+      '为 Cowart HTML 活海报生成一张透明背景艺术字图片。',
+      `文字：${sourceText || '当前文字层'}`,
+      `提示词：${patch?.prompt || '按当前海报风格生成艺术字。'}`,
+      selector ? `目标节点：${selector}` : null,
+      `目标区域：x=${region.x}, y=${region.y}, w=${region.w}, h=${region.h}`,
+      `画板尺寸：${runtimeDocument.width}x${runtimeDocument.height}`,
+      '只生成这个文字区域的覆盖图片，不要生成整张海报。',
+      '不要修改 HTML/CSS。',
+      '优先透明背景，边缘干净，适合直接覆盖在原标题位置。'
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    negativeInstructions: [
+      '不要输出完整海报。',
+      '不要包含浏览器 UI、画布 UI 或无关内容。',
+      '不要改写 HTML。',
+      '不要改写 CSS。',
+      '不要包含本地路径、密钥或隐私信息。'
+    ],
+    safetyGuards: {
+      expectedDocumentId: runtimeDocument.id,
+      expectedRenderFingerprint: runtimeDocument.renderFingerprint,
+      expectedMutationCount: runtimeDocument.mutationLog.length,
+      expectedFusionPatchCount: runtimeDocument.fusionPatches.length
+    }
+  }
 }
 
 function hasRuntimeDocumentChange(previousDocument, nextDocument) {
