@@ -6,33 +6,61 @@ const DEFAULT_WIDTH = 720
 const DEFAULT_HEIGHT = 1280
 const FORBIDDEN_UI_FIELDS = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
-const DEFAULT_HTML = `<section class="artboard">
-  <h1>Cowart HTML Artboard</h1>
-  <p>A source document for future HTML/CSS visual canvases.</p>
+const DEFAULT_HTML = `<section class="artboard" data-node="hero">
+  <p class="eyebrow" data-node="eyebrow">新品视觉</p>
+  <h1 data-node="headline">每行文字都能拖动</h1>
+  <p class="subhead" data-node="subhead">底图是氛围，文字可编辑，局部可融合。</p>
+  <button data-node="cta">生成融合图层</button>
 </section>`
 
 const DEFAULT_CSS = `.artboard {
   box-sizing: border-box;
+  width: 100%;
   min-height: 100%;
-  display: grid;
-  place-content: center;
-  gap: 16px;
-  padding: 64px;
-  color: #18222f;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 24px;
+  padding: 96px 72px;
+  color: #16212a;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  text-align: center;
+  background: linear-gradient(160deg, #eef7ff 0%, #f6efe6 58%, #ffffff 100%);
+}
+
+.artboard .eyebrow {
+  margin: 0;
+  width: max-content;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(22, 33, 42, 0.08);
+  font-size: 24px;
+  font-weight: 700;
 }
 
 .artboard h1 {
   margin: 0;
-  font-size: 48px;
-  line-height: 1.05;
+  max-width: 560px;
+  font-size: 78px;
+  line-height: 1.02;
+  font-weight: 900;
 }
 
-.artboard p {
+.artboard .subhead {
   margin: 0;
-  font-size: 20px;
-  line-height: 1.5;
+  max-width: 560px;
+  font-size: 28px;
+  line-height: 1.45;
+}
+
+.artboard button {
+  width: 220px;
+  height: 64px;
+  border: 0;
+  border-radius: 999px;
+  background: #16212a;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 800;
 }`
 
 const DEFAULT_BACKGROUND = {

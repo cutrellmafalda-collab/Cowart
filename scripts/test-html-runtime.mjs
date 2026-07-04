@@ -582,6 +582,18 @@ test('createHtmlArtboardTextLayersFromDocument creates layers from data-node tex
   assert.equal(layers[1].text, 'Subtitle')
 })
 
+test('createHtmlArtboardTextLayersFromDocument makes headline larger than body text', () => {
+  const document = createHtmlArtboardDocument({
+    html: '<section><h1 data-node="headline">Title</h1><p data-node="subhead">Subtitle</p></section>'
+  })
+  const layers = createHtmlArtboardTextLayersFromDocument(document)
+
+  assert.equal(layers[0].dataNode, 'headline')
+  assert.equal(layers[1].dataNode, 'subhead')
+  assert.ok(layers[0].fontSize > layers[1].fontSize)
+  assert.ok(layers[0].scale > layers[1].scale)
+})
+
 test('createHtmlArtboardTextLayersFromDocument skips container data-node text', () => {
   const document = createHtmlArtboardDocument({
     html: '<section data-node="hero"><h1 data-node="headline">Title</h1><p data-node="subhead">Subtitle</p></section>'

@@ -123,12 +123,15 @@ export function createHtmlArtboardTextLayersFromDocument(document, options = {})
 
   const marginX = Math.round(runtimeDocument.width * 0.1)
   const usableWidth = Math.round(runtimeDocument.width * 0.8)
-  const startY = Math.round(runtimeDocument.height * 0.46)
-  const gap = Math.max(88, Math.round(runtimeDocument.height * 0.085))
+  const startY = Math.round(runtimeDocument.height * 0.42)
+  const gap = Math.max(96, Math.round(runtimeDocument.height * 0.092))
 
   return sourceTargets.map((target, index) => {
     const isHeadline = ['h1', 'h2'].includes(target.tagName)
-    const fontSize = isHeadline ? 76 : 34
+    const isEyebrow = target.dataNode === 'eyebrow'
+    const isAction = ['button', 'a'].includes(target.tagName) || target.dataNode === 'cta'
+    const fontSize = isHeadline ? 88 : isEyebrow || isAction ? 28 : 34
+    const scale = isHeadline ? 0.98 : isEyebrow || isAction ? 0.55 : 0.62
     return normalizeHtmlArtboardTextLayer({
       id: createTextLayerId(target, index),
       dataNode: target.dataNode ?? null,
@@ -140,7 +143,7 @@ export function createHtmlArtboardTextLayersFromDocument(document, options = {})
       w: usableWidth,
       h: Math.round(fontSize * (isHeadline ? 1.15 : 1.5)),
       fontSize,
-      scale: 1,
+      scale,
       color: 'black',
       align: 'center'
     })

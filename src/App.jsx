@@ -277,12 +277,69 @@ function createAiImageHolderAtViewportCenter(editor) {
   editor.setCurrentTool('select.idle')
 }
 
-function createHtmlArtboardAtViewportCenter(editor) {
-  const document = createHtmlArtboardDocument()
-  const shapeId = createShapeId()
+function doBoundsOverlap(left, right, padding = 48) {
+  if (!left || !right) return false
+
+  return !(
+    left.x + left.w + padding <= right.x ||
+    right.x + right.w + padding <= left.x ||
+    left.y + left.h + padding <= right.y ||
+    right.y + right.h + padding <= left.y
+  )
+}
+
+function findAvailableHtmlArtboardPosition(editor, width, height) {
   const center = editor.getViewportPageBounds().center
-  const x = center.x - document.width / 2
-  const y = center.y - document.height / 2
+  const base = {
+    x: center.x - width / 2,
+    y: center.y - height / 2
+  }
+  const existingBounds = editor
+    .getCurrentPageShapes()
+    .map((shape) => editor.getShapePageBounds(shape))
+    .filter(Boolean)
+  const stepX = width + 160
+  const stepY = height + 160
+  const offsets = [
+    [0, 0],
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [-1, 1],
+    [1, -1],
+    [-1, -1],
+    [2, 0],
+    [-2, 0],
+    [0, 2],
+    [0, -2]
+  ]
+
+  for (const [offsetX, offsetY] of offsets) {
+    const candidate = {
+      x: base.x + offsetX * stepX,
+      y: base.y + offsetY * stepY,
+      w: width,
+      h: height
+    }
+
+    if (!existingBounds.some((bounds) => doBoundsOverlap(candidate, bounds))) {
+      return { x: candidate.x, y: candidate.y }
+    }
+  }
+
+  return base
+}
+
+function createHtmlArtboardAtViewportCenter(editor) {
+  const initialDocument = createHtmlArtboardDocument()
+  const textLayers = createHtmlArtboardTextLayersFromDocument(initialDocument, {
+    recreate: true
+  })
+  const document = updateHtmlArtboardTextLayers(initialDocument, textLayers)
+  const shapeId = createShapeId()
+  const { x, y } = findAvailableHtmlArtboardPosition(editor, document.width, document.height)
   const bridgeShape = htmlArtboardToCowartShape(document, {
     shapeId,
     x,
@@ -295,10 +352,19 @@ function createHtmlArtboardAtViewportCenter(editor) {
     type: 'frame',
     x: bridgeShape.x,
     y: bridgeShape.y,
+    parentId: editor.getCurrentPageId(),
     props: bridgeShape.props,
     meta: bridgeShape.meta
   })
+  const createdShape = editor.getShape(shapeId)
+  if (createdShape) {
+    upsertHtmlArtboardTextLayerShapes(editor, createdShape, textLayers)
+    refreshHtmlArtboardCanvasPreview(editor, createdShape, document).catch((error) => {
+      console.error(error)
+    })
+  }
   editor.select(shapeId)
+  editor.zoomToSelection({ animation: { duration: 220 } })
   editor.setCurrentTool('select.idle')
 }
 
@@ -381,6 +447,21 @@ function createHtmlArtboardCanvasPreviewMeta(selectedShape, runtimeDocument) {
     ...createHtmlArtboardPreviewMeta(runtimeDocument, {
       sourceHtmlArtboardShapeId: selectedShape.id
     })
+  }
+}
+
+function arrangeHtmlArtboardCanvasLayers(editor, selectedShape) {
+  const previewShape = findHtmlArtboardPreviewShape(editor, selectedShape.id)
+  const textLayerShapeIds = findHtmlArtboardTextLayerShapes(editor, selectedShape.id).map(
+    (shape) => shape.id
+  )
+
+  if (previewShape) {
+    editor.sendToBack([previewShape.id])
+  }
+
+  if (textLayerShapeIds.length > 0) {
+    editor.bringToFront(textLayerShapeIds)
   }
 }
 
@@ -703,7 +784,7 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
         y: selectedShape.y,
         rotation: selectedShape.rotation ?? 0,
         parentId: selectedShape.parentId,
-        isLocked: false,
+        isLocked: true,
         opacity: 1,
         props: {
           ...existingPreviewShape.props,
@@ -723,13 +804,14 @@ async function refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDo
       y: selectedShape.y,
       rotation: selectedShape.rotation ?? 0,
       parentId: selectedShape.parentId,
-      isLocked: false,
+      isLocked: true,
       opacity: 1,
       props: imageProps,
       meta: previewMeta
     })
   }
 
+  arrangeHtmlArtboardCanvasLayers(editor, selectedShape)
   editor.select(selectedShape.id)
 }
 
@@ -1152,7 +1234,6 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
-      <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
       <CowartHtmlArtboardFusionPatches
         editor={editor}
         runtimeDocument={runtimeDocument}
@@ -1160,6 +1241,8 @@ function CowartHtmlArtboardPreviewControls() {
       />
       <details className="cowart-html-advanced">
         <summary>高级</summary>
+        <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
+        <CowartHtmlArtboardAiGenerationStatus />
         <section className="cowart-html-preview-section">
           <div className="cowart-html-preview-heading">
             <span>安全预览</span>
@@ -1290,13 +1373,14 @@ function CowartHtmlArtboardCanvasPreviewControls({ editor, runtimeDocument, sele
 function getTextLayerTextShapeProps(layer) {
   const textAlign = layer.align === 'center' ? 'middle' : layer.align === 'end' ? 'end' : 'start'
   const scale = Math.max(0.25, Number(layer.scale) || Number(layer.fontSize) / 32 || 1)
+  const visualWidth = Math.max(32, Number(layer.w) || 240)
 
   return {
     color: 'black',
     size: 'xl',
     font: 'sans',
     textAlign,
-    w: Math.max(32, Number(layer.w) || 240),
+    w: visualWidth / scale,
     richText: toRichText(layer.text ?? ''),
     scale,
     autoSize: false
@@ -1415,8 +1499,8 @@ function CowartHtmlArtboardTextLayerControls({ editor, runtimeDocument, selected
         updatedDocument,
         'create-html-artboard-text-layers'
       )
-      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
       upsertHtmlArtboardTextLayerShapes(editor, selectedShape, textLayers)
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
       editor.select(selectedShape.id)
       setTextLayerStatus(`已生成 ${textLayers.length} 个文字层`)
     } catch {
@@ -2015,7 +2099,6 @@ function CowartHtmlArtboardFusionPatches({ editor, runtimeDocument, selectedShap
           </>
         )}
       </section>
-      <CowartHtmlArtboardAiGenerationStatus />
       {fusionPatches.length === 0 ? (
         <p className="cowart-html-fusion-empty">还没有融合图层。</p>
       ) : (
