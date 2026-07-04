@@ -7,6 +7,16 @@ import { extractHtmlArtboardPatchTargets } from './htmlArtboardPatchTargets.js'
 import { withRenderFingerprint } from './renderFingerprint.js'
 
 const DEFAULT_LAYER_SOURCE = 'html-artboard-text-layer-panel'
+const CONTAINER_TEXT_TARGET_TAGS = new Set([
+  'article',
+  'aside',
+  'div',
+  'footer',
+  'header',
+  'main',
+  'nav',
+  'section'
+])
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -37,6 +47,82 @@ function createTextLayerId(target, index) {
     ? target.dataNode.trim()
     : `text-${index + 1}`
   return `text-layer:${dataNode.replace(/[^\w:-]+/g, '-')}`
+}
+
+function getDefaultTextLayerPlacement(target, index, document) {
+  const width = Number(document.width) || 720
+  const height = Number(document.height) || 1280
+  const role = target.dataNode ?? target.tagName ?? 'text'
+  const left = Math.round(width * 0.105)
+  const contentWidth = Math.round(width * 0.79)
+  const placements = {
+    eyebrow: {
+      x: left,
+      y: Math.round(height * 0.2),
+      w: Math.round(width * 0.48),
+      fontSize: 22,
+      scale: 0.54,
+      color: 'blue',
+      font: 'mono',
+      align: 'start'
+    },
+    headline: {
+      x: left,
+      y: Math.round(height * 0.305),
+      w: contentWidth,
+      fontSize: 92,
+      scale: 1.42,
+      color: 'black',
+      font: 'sans',
+      align: 'start'
+    },
+    subhead: {
+      x: left,
+      y: Math.round(height * 0.52),
+      w: Math.round(width * 0.75),
+      fontSize: 32,
+      scale: 0.78,
+      color: 'black',
+      font: 'sans',
+      align: 'start'
+    },
+    detail: {
+      x: left,
+      y: Math.round(height * 0.655),
+      w: Math.round(width * 0.72),
+      fontSize: 24,
+      scale: 0.58,
+      color: 'grey',
+      font: 'sans',
+      align: 'start'
+    },
+    cta: {
+      x: left,
+      y: Math.round(height * 0.805),
+      w: Math.round(width * 0.42),
+      fontSize: 26,
+      scale: 0.66,
+      color: 'orange',
+      font: 'sans',
+      align: 'center'
+    }
+  }
+
+  if (placements[role]) return placements[role]
+
+  const isHeadline = ['h1', 'h2'].includes(target.tagName)
+  const isAction = ['button', 'a'].includes(target.tagName)
+  const fontSize = isHeadline ? 88 : isAction ? 28 : 34
+  return {
+    x: left,
+    y: Math.round(height * 0.42) + index * Math.max(82, Math.round(height * 0.075)),
+    w: contentWidth,
+    fontSize,
+    scale: isHeadline ? 1.08 : isAction ? 0.65 : 0.72,
+    color: 'black',
+    font: 'sans',
+    align: 'start'
+  }
 }
 
 function escapeHtmlText(value) {
@@ -86,6 +172,7 @@ export function normalizeHtmlArtboardTextLayer(layer = {}) {
     fontSize: normalizePositiveNumber(layer.fontSize, 32),
     scale: normalizePositiveNumber(layer.scale, 1),
     color: typeof layer.color === 'string' && layer.color ? layer.color : 'black',
+    font: typeof layer.font === 'string' && layer.font ? layer.font : 'sans',
     align: typeof layer.align === 'string' && layer.align ? layer.align : 'start',
     visible: layer.visible !== false,
     meta: isRecord(layer.meta) ? deepClone(layer.meta) : {}
@@ -103,6 +190,9 @@ export function createHtmlArtboardTextLayersFromDocument(document, options = {})
 
   const targets = extractHtmlArtboardPatchTargets(runtimeDocument).filter((target) => target.sourceText)
   const leafTargets = targets.filter((target) => {
+    const isContainerTarget = CONTAINER_TEXT_TARGET_TAGS.has(String(target.tagName ?? '').toLowerCase())
+    if (!isContainerTarget) return true
+
     return !targets.some((otherTarget) => {
       return (
         otherTarget !== target &&
@@ -121,31 +211,23 @@ export function createHtmlArtboardTextLayersFromDocument(document, options = {})
       ? [{ dataNode: 'text', selector: null, sourceText: fallbackText, tagName: 'p' }]
       : []
 
-  const marginX = Math.round(runtimeDocument.width * 0.1)
-  const usableWidth = Math.round(runtimeDocument.width * 0.8)
-  const startY = Math.round(runtimeDocument.height * 0.42)
-  const gap = Math.max(96, Math.round(runtimeDocument.height * 0.092))
-
   return sourceTargets.map((target, index) => {
-    const isHeadline = ['h1', 'h2'].includes(target.tagName)
-    const isEyebrow = target.dataNode === 'eyebrow'
-    const isAction = ['button', 'a'].includes(target.tagName) || target.dataNode === 'cta'
-    const fontSize = isHeadline ? 88 : isEyebrow || isAction ? 28 : 34
-    const scale = isHeadline ? 0.98 : isEyebrow || isAction ? 0.55 : 0.62
+    const placement = getDefaultTextLayerPlacement(target, index, runtimeDocument)
     return normalizeHtmlArtboardTextLayer({
       id: createTextLayerId(target, index),
       dataNode: target.dataNode ?? null,
       selector: target.selector ?? null,
       sourceText: target.sourceText ?? '',
       text: target.sourceText ?? '',
-      x: marginX,
-      y: startY + index * gap,
-      w: usableWidth,
-      h: Math.round(fontSize * (isHeadline ? 1.15 : 1.5)),
-      fontSize,
-      scale,
-      color: 'black',
-      align: 'center'
+      x: placement.x,
+      y: placement.y,
+      w: placement.w,
+      h: Math.round(placement.fontSize * (placement.scale > 1 ? 1.2 : 1.55)),
+      fontSize: placement.fontSize,
+      scale: placement.scale,
+      color: placement.color,
+      font: placement.font,
+      align: placement.align
     })
   })
 }

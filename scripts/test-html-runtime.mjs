@@ -150,6 +150,19 @@ test('createHtmlArtboardDocument returns required schema fields', () => {
   assert.equal(document.renderFingerprint, null)
 })
 
+test('createHtmlArtboardDocument defaults to live poster template nodes', () => {
+  const document = createHtmlArtboardDocument()
+  const targets = extractHtmlArtboardPatchTargets(document)
+  const dataNodes = targets.map((target) => target.dataNode)
+
+  assert.equal(dataNodes.includes('eyebrow'), true)
+  assert.equal(dataNodes.includes('headline'), true)
+  assert.equal(dataNodes.includes('subhead'), true)
+  assert.equal(dataNodes.includes('detail'), true)
+  assert.equal(dataNodes.includes('cta'), true)
+  assert.equal(document.background.identity, 'summer-ice-live-poster-gradient-v1')
+})
+
 test('ensureHtmlArtboardDocument fills missing fields', () => {
   const document = ensureHtmlArtboardDocument({ id: 'artboard:existing' })
 
@@ -594,6 +607,20 @@ test('createHtmlArtboardTextLayersFromDocument makes headline larger than body t
   assert.ok(layers[0].scale > layers[1].scale)
 })
 
+test('createHtmlArtboardTextLayersFromDocument applies poster visual roles', () => {
+  const document = createHtmlArtboardDocument()
+  const layers = createHtmlArtboardTextLayersFromDocument(document)
+  const byNode = Object.fromEntries(layers.map((layer) => [layer.dataNode, layer]))
+
+  assert.ok(byNode.headline.scale > byNode.subhead.scale)
+  assert.equal(byNode.headline.align, 'start')
+  assert.equal(byNode.eyebrow.color, 'blue')
+  assert.equal(byNode.eyebrow.font, 'mono')
+  assert.equal(byNode.detail.color, 'grey')
+  assert.equal(byNode.cta.color, 'orange')
+  assert.equal(byNode.cta.align, 'center')
+})
+
 test('createHtmlArtboardTextLayersFromDocument skips container data-node text', () => {
   const document = createHtmlArtboardDocument({
     html: '<section data-node="hero"><h1 data-node="headline">Title</h1><p data-node="subhead">Subtitle</p></section>'
@@ -622,6 +649,7 @@ test('normalizeHtmlArtboardTextLayers preserves visual text layer controls', () 
       id: 'layer:visual',
       text: 'Visual',
       color: 'blue',
+      font: 'serif',
       align: 'center',
       scale: '1.75',
       visible: false
@@ -629,6 +657,7 @@ test('normalizeHtmlArtboardTextLayers preserves visual text layer controls', () 
   ])
 
   assert.equal(layer.color, 'blue')
+  assert.equal(layer.font, 'serif')
   assert.equal(layer.align, 'center')
   assert.equal(layer.scale, 1.75)
   assert.equal(layer.visible, false)

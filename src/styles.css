@@ -313,6 +313,23 @@ body {
   resize: vertical;
 }
 
+.cowart-html-text-layer-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding-top: 17px;
+  color: var(--tl-color-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cowart-html-text-layer-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
 .cowart-html-text-layer-note {
   margin: 0;
   color: var(--tl-color-text-2);

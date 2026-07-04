@@ -91,7 +91,7 @@ const VIEW_STATE_ENDPOINT = '/api/view-state'
 const SELECTION_STATE_ELEMENT_ID = 'cowart-selection-state'
 const AI_IMAGE_TOOL_ID = 'ai-image'
 const HTML_ARTBOARD_TOOL_ID = 'html-artboard'
-const HTML_ARTBOARD_TOOL_LABEL = 'HTML 画板'
+const HTML_ARTBOARD_TOOL_LABEL = 'HTML 活海报'
 const HTML_ARTBOARD_PREVIEW_VERSION = 1
 const HTML_TEXT_LAYER_COLOR_OPTIONS = [
   { value: 'black', label: '黑色' },
@@ -100,8 +100,13 @@ const HTML_TEXT_LAYER_COLOR_OPTIONS = [
   { value: 'light-blue', label: '浅蓝' },
   { value: 'green', label: '绿色' },
   { value: 'orange', label: '橙色' },
-  { value: 'red', label: '红色' },
-  { value: 'white', label: '白色' }
+  { value: 'red', label: '红色' }
+]
+const HTML_TEXT_LAYER_FONT_OPTIONS = [
+  { value: 'sans', label: '黑体' },
+  { value: 'serif', label: '宋体' },
+  { value: 'mono', label: '等宽' },
+  { value: 'draw', label: '手写' }
 ]
 const AI_IMAGE_HOLDER_LABEL = 'AI 图片'
 const AI_IMAGE_HOLDER_DEFAULT_W = 512
@@ -653,6 +658,56 @@ function getHtmlArtboardBackgroundAssetUrl(runtimeDocument) {
   )
 }
 
+function getHtmlArtboardBackgroundColors(runtimeDocument) {
+  const colors = runtimeDocument?.background?.colors
+  return Array.isArray(colors) && colors.length >= 2
+    ? colors.filter((color) => typeof color === 'string' && color)
+    : ['#e8f7ff', '#f5fbff', '#ffe9d4']
+}
+
+function drawHtmlArtboardAtmosphereBackground(context, runtimeDocument, width, height) {
+  const colors = getHtmlArtboardBackgroundColors(runtimeDocument)
+  const gradient = context.createLinearGradient(0, 0, width, height)
+  gradient.addColorStop(0, colors[0] ?? '#e8f7ff')
+  gradient.addColorStop(0.48, colors[1] ?? '#f5fbff')
+  gradient.addColorStop(1, colors[2] ?? colors.at(-1) ?? '#ffe9d4')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, width, height)
+
+  const topGlow = context.createRadialGradient(width * 0.76, height * 0.18, 1, width * 0.76, height * 0.18, width * 0.42)
+  topGlow.addColorStop(0, 'rgba(255,255,255,0.84)')
+  topGlow.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = topGlow
+  context.fillRect(0, 0, width, height)
+
+  const blueGlow = context.createRadialGradient(width * 0.18, height * 0.74, 1, width * 0.18, height * 0.74, width * 0.46)
+  blueGlow.addColorStop(0, 'rgba(56,189,248,0.22)')
+  blueGlow.addColorStop(1, 'rgba(56,189,248,0)')
+  context.fillStyle = blueGlow
+  context.fillRect(0, 0, width, height)
+
+  context.save()
+  context.globalAlpha = 0.28
+  context.strokeStyle = 'rgba(255,255,255,0.88)'
+  context.lineWidth = Math.max(2, width * 0.006)
+  context.beginPath()
+  context.moveTo(width * 0.12, height * 0.18)
+  context.bezierCurveTo(width * 0.34, height * 0.08, width * 0.58, height * 0.18, width * 0.88, height * 0.08)
+  context.stroke()
+  context.restore()
+
+  context.save()
+  context.globalAlpha = 0.16
+  context.fillStyle = '#ffffff'
+  context.beginPath()
+  context.roundRect(width * 0.55, height * 0.09, width * 0.28, height * 0.14, width * 0.04)
+  context.fill()
+  context.beginPath()
+  context.roundRect(width * 0.13, height * 0.77, width * 0.34, height * 0.12, width * 0.05)
+  context.fill()
+  context.restore()
+}
+
 async function createThumbnailAssetUrlResolver(runtimeDocument) {
   const patchAssetUrls = [
     ...new Set(
@@ -701,12 +756,7 @@ async function createHtmlArtboardCanvasPreviewPngDataUrl(runtimeDocument, assetU
   canvas.height = height
 
   const context = canvas.getContext('2d')
-  const gradient = context.createLinearGradient(0, 0, width, height)
-  gradient.addColorStop(0, '#f4f7fb')
-  gradient.addColorStop(0.5, '#d8e7f0')
-  gradient.addColorStop(1, '#f6e6d9')
-  context.fillStyle = gradient
-  context.fillRect(0, 0, width, height)
+  drawHtmlArtboardAtmosphereBackground(context, runtimeDocument, width, height)
 
   const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
   const backgroundImage =
@@ -1235,7 +1285,7 @@ function CowartHtmlArtboardPreviewControls() {
     <div className="cowart-html-artboard-preview-panel" aria-label="HTML 画板面板">
       <section className="cowart-html-artboard-summary">
         <div className="cowart-html-preview-heading">
-          <span>HTML 画板</span>
+          <span>HTML 活海报</span>
           <span>
             {runtimeDocument.width} × {runtimeDocument.height}
           </span>
@@ -1246,6 +1296,7 @@ function CowartHtmlArtboardPreviewControls() {
         runtimeDocument={runtimeDocument}
         selectedShape={shape}
       />
+      <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
       <CowartHtmlArtboardSelectedTextLayerControls
         editor={editor}
         runtimeDocument={runtimeDocument}
@@ -1264,7 +1315,6 @@ function CowartHtmlArtboardPreviewControls() {
       />
       <details className="cowart-html-advanced">
         <summary>高级</summary>
-        <CowartHtmlArtboardBackgroundSummary runtimeDocument={runtimeDocument} />
         <CowartHtmlArtboardAiGenerationStatus />
         <section className="cowart-html-preview-section">
           <div className="cowart-html-preview-heading">
@@ -1400,11 +1450,14 @@ function getTextLayerTextShapeProps(layer) {
   const color = HTML_TEXT_LAYER_COLOR_OPTIONS.some((option) => option.value === layer.color)
     ? layer.color
     : 'black'
+  const font = HTML_TEXT_LAYER_FONT_OPTIONS.some((option) => option.value === layer.font)
+    ? layer.font
+    : 'sans'
 
   return {
     color,
     size: 'xl',
-    font: 'sans',
+    font,
     textAlign,
     w: visualWidth / scale,
     richText: toRichText(layer.text ?? ''),
@@ -1491,6 +1544,7 @@ function getTextLayerFromShape(editor, selectedShape, textShape) {
     fontSize: Math.round(32 * scale),
     scale,
     color: textShape.props?.color ?? 'black',
+    font: textShape.props?.font ?? 'sans',
     align: textShape.props?.textAlign === 'middle' ? 'center' : textShape.props?.textAlign ?? 'start',
     visible: textShape.opacity !== 0,
     meta: {}
@@ -1517,6 +1571,10 @@ function normalizeTextLayerColor(value) {
   return HTML_TEXT_LAYER_COLOR_OPTIONS.some((option) => option.value === value) ? value : 'black'
 }
 
+function normalizeTextLayerFont(value) {
+  return HTML_TEXT_LAYER_FONT_OPTIONS.some((option) => option.value === value) ? value : 'sans'
+}
+
 function CowartHtmlArtboardSelectedTextLayerControls({
   editor,
   runtimeDocument,
@@ -1527,7 +1585,9 @@ function CowartHtmlArtboardSelectedTextLayerControls({
   const [draftScale, setDraftScale] = useState('1')
   const [draftWidth, setDraftWidth] = useState('240')
   const [draftColor, setDraftColor] = useState('black')
+  const [draftFont, setDraftFont] = useState('sans')
   const [draftAlign, setDraftAlign] = useState('start')
+  const [draftVisible, setDraftVisible] = useState(true)
   const [textLayerStatus, setTextLayerStatus] = useState('')
 
   const currentLayer = useMemo(() => {
@@ -1542,14 +1602,18 @@ function CowartHtmlArtboardSelectedTextLayerControls({
     setDraftScale(String(Number(currentLayer.scale || 1).toFixed(2)).replace(/\.?0+$/, ''))
     setDraftWidth(String(Math.round(currentLayer.w || 240)))
     setDraftColor(normalizeTextLayerColor(currentLayer.color))
+    setDraftFont(normalizeTextLayerFont(currentLayer.font))
     setDraftAlign(normalizeTextLayerAlign(currentLayer.align))
+    setDraftVisible(currentLayer.visible !== false)
   }, [
     currentLayer?.id,
     currentLayer?.text,
     currentLayer?.scale,
     currentLayer?.w,
     currentLayer?.color,
-    currentLayer?.align
+    currentLayer?.font,
+    currentLayer?.align,
+    currentLayer?.visible
   ])
 
   useEffect(() => {
@@ -1569,7 +1633,9 @@ function CowartHtmlArtboardSelectedTextLayerControls({
         fontSize: Math.round(32 * nextScale),
         w: normalizeTextLayerVisualWidth(draftWidth),
         color: normalizeTextLayerColor(draftColor),
-        align: normalizeTextLayerAlign(draftAlign)
+        font: normalizeTextLayerFont(draftFont),
+        align: normalizeTextLayerAlign(draftAlign),
+        visible: draftVisible
       }
 
       editor.updateShapes([
@@ -1657,12 +1723,32 @@ function CowartHtmlArtboardSelectedTextLayerControls({
           </select>
         </label>
         <label className="cowart-html-text-layer-field">
+          <span>字体</span>
+          <select value={draftFont} onChange={(event) => setDraftFont(event.target.value)}>
+            {HTML_TEXT_LAYER_FONT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="cowart-html-text-layer-grid">
+        <label className="cowart-html-text-layer-field">
           <span>对齐</span>
           <select value={draftAlign} onChange={(event) => setDraftAlign(event.target.value)}>
             <option value="start">左对齐</option>
             <option value="center">居中</option>
             <option value="end">右对齐</option>
           </select>
+        </label>
+        <label className="cowart-html-text-layer-check">
+          <input
+            checked={draftVisible}
+            onChange={(event) => setDraftVisible(event.target.checked)}
+            type="checkbox"
+          />
+          <span>显示这一行</span>
         </label>
       </div>
       <div className="cowart-html-text-layer-actions">

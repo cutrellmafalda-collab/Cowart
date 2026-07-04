@@ -7,10 +7,11 @@ const DEFAULT_HEIGHT = 1280
 const FORBIDDEN_UI_FIELDS = ['zoom', 'activeTab', 'selectedSelector', 'workspace']
 
 const DEFAULT_HTML = `<section class="artboard" data-node="hero">
-  <p class="eyebrow" data-node="eyebrow">新品视觉</p>
-  <h1 data-node="headline">每行文字都能拖动</h1>
-  <p class="subhead" data-node="subhead">底图是氛围，文字可编辑，局部可融合。</p>
-  <button data-node="cta">生成融合图层</button>
+  <p class="eyebrow" data-node="eyebrow">COWART LIVE POSTER</p>
+  <h1 data-node="headline">夏日冰感上新</h1>
+  <p class="subhead" data-node="subhead">每一行文字都能在画布里单独拖动、改大小，再局部生成艺术字。</p>
+  <p class="detail" data-node="detail">底图负责氛围，HTML 负责可编辑内容，FusionPatch 负责局部融合。</p>
+  <button data-node="cta">生成艺术字</button>
 </section>`
 
 const DEFAULT_CSS = `.artboard {
@@ -19,56 +20,70 @@ const DEFAULT_CSS = `.artboard {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: 24px;
-  padding: 96px 72px;
-  color: #16212a;
+  justify-content: center;
+  gap: 26px;
+  padding: 108px 76px 96px;
+  color: #10202f;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  background: linear-gradient(160deg, #eef7ff 0%, #f6efe6 58%, #ffffff 100%);
+  background:
+    radial-gradient(circle at 76% 20%, rgba(255,255,255,.72), transparent 26%),
+    radial-gradient(circle at 18% 72%, rgba(56,189,248,.28), transparent 34%),
+    linear-gradient(160deg, #e8f7ff 0%, #f5fbff 42%, #ffe9d4 100%);
 }
 
 .artboard .eyebrow {
   margin: 0;
   width: max-content;
-  padding: 10px 18px;
+  padding: 10px 16px;
   border-radius: 999px;
-  background: rgba(22, 33, 42, 0.08);
-  font-size: 24px;
+  background: rgba(16, 32, 47, 0.08);
+  font-size: 22px;
   font-weight: 700;
+  letter-spacing: .12em;
 }
 
 .artboard h1 {
   margin: 0;
-  max-width: 560px;
-  font-size: 78px;
-  line-height: 1.02;
+  max-width: 600px;
+  font-size: 92px;
+  line-height: .98;
   font-weight: 900;
+  letter-spacing: -.04em;
 }
 
 .artboard .subhead {
   margin: 0;
-  max-width: 560px;
-  font-size: 28px;
+  max-width: 590px;
+  font-size: 31px;
   line-height: 1.45;
+  font-weight: 650;
+}
+
+.artboard .detail {
+  margin: 0;
+  max-width: 560px;
+  color: rgba(16, 32, 47, .68);
+  font-size: 22px;
+  line-height: 1.55;
 }
 
 .artboard button {
-  width: 220px;
+  width: 208px;
   height: 64px;
   border: 0;
   border-radius: 999px;
-  background: #16212a;
+  background: #10202f;
   color: #ffffff;
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 800;
 }`
 
 const DEFAULT_BACKGROUND = {
   type: 'gradient',
-  identity: 'no-text-atmosphere-gradient-v1',
-  description: 'No-text atmosphere gradient metadata for an HTML artboard source.',
-  prompt: 'no text, atmospheric gradient background',
-  colors: ['#f4f7fb', '#d8e7f0', '#f6e6d9']
+  identity: 'summer-ice-live-poster-gradient-v1',
+  description: 'No-text summer ice gradient background metadata for an HTML artboard source.',
+  prompt: 'no text, fresh summer ice poster background, soft blue highlights, warm product glow',
+  colors: ['#e8f7ff', '#f5fbff', '#ffe9d4']
 }
 
 function isRecord(value) {
