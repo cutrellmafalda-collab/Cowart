@@ -2453,6 +2453,21 @@ test('createMockFusionPatchAsset returns data URL', () => {
   assert.equal(asset.patchAssetUrl.startsWith('data:image/svg+xml;charset=utf-8,'), true)
 })
 
+test('createMockFusionPatchAsset creates transparent art text asset for art-text patch', () => {
+  const patch = createFusionPatchPlaceholder({
+    id: 'patch:mock-art-text-asset',
+    name: '艺术字：冰感桃桃',
+    sourceText: '冰感桃桃',
+    meta: { purpose: 'art-text' }
+  })
+  const asset = createMockFusionPatchAsset(patch, createHtmlArtboardDocument())
+  const svg = decodeURIComponent(asset.patchAssetUrl.split(',').at(1))
+
+  assert.equal(svg.includes('cowart-art-text-mock-asset'), true)
+  assert.equal(svg.includes('冰感桃桃'), true)
+  assert.equal(svg.includes('Mock Fusion Patch'), false)
+})
+
 test('generateMockFusionPatchAssetForHtmlArtboard writes patchAssetId and patchAssetUrl', () => {
   const patch = createFusionPatchPlaceholder({ id: 'patch:asset-fields' })
   const updated = generateMockFusionPatchAssetForHtmlArtboard(

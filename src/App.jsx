@@ -607,6 +607,21 @@ function drawCoverImage(context, image, x, y, width, height) {
   context.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight)
 }
 
+function drawContainImage(context, image, x, y, width, height) {
+  if (!image || width <= 0 || height <= 0) return
+
+  const imageWidth = image.naturalWidth || image.width
+  const imageHeight = image.naturalHeight || image.height
+  if (!imageWidth || !imageHeight) return
+
+  const scale = Math.min(width / imageWidth, height / imageHeight)
+  const scaledWidth = imageWidth * scale
+  const scaledHeight = imageHeight * scale
+  const offsetX = x + (width - scaledWidth) / 2
+  const offsetY = y + (height - scaledHeight) / 2
+  context.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight)
+}
+
 function drawRoundRect(context, x, y, width, height, radius) {
   const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2))
   context.beginPath()
@@ -709,18 +724,29 @@ async function drawFusionPatchPreview(context, patch, assetUrlResolver) {
       ? assetUrlResolver(patch.patchAssetUrl)
       : null
   const patchImage = patchAssetUrl ? await loadPreviewImage(patchAssetUrl) : null
-  const isMockPatch =
-    patch?.provider === 'mock' ||
-    patch?.status === 'placeholder' ||
-    patch?.status === 'mock-generated'
+  const isArtTextPatch = patch?.meta?.purpose === 'art-text'
+  const isMockPatch = patch?.provider === 'mock' || patch?.status === 'mock-generated'
 
-  if (patchImage && !isMockPatch) {
+  if (patchImage && (isArtTextPatch || !isMockPatch)) {
     context.save()
     context.shadowColor = 'rgba(15, 23, 42, 0.18)'
     context.shadowBlur = 18
     context.shadowOffsetY = 8
-    drawCoverImage(context, patchImage, region.x, region.y, region.w, region.h)
+    if (isArtTextPatch) {
+      drawContainImage(context, patchImage, region.x, region.y, region.w, region.h)
+    } else {
+      drawCoverImage(context, patchImage, region.x, region.y, region.w, region.h)
+    }
     context.restore()
+  } else {
+    context.setLineDash([10, 8])
+    context.lineWidth = 3
+    context.strokeStyle = 'rgba(250, 204, 21, 0.88)'
+    context.fillStyle = 'rgba(250, 204, 21, 0.12)'
+    drawRoundRect(context, region.x, region.y, region.w, region.h, 8)
+    context.fill()
+    context.stroke()
+    context.setLineDash([])
   }
 
   context.restore()

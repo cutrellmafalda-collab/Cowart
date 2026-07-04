@@ -70,6 +70,10 @@ function getPatchLabel(patch) {
   )
 }
 
+function isArtTextPatch(patch) {
+  return patch?.meta?.purpose === 'art-text'
+}
+
 function getMutationOptions(options = {}) {
   return {
     ...options.mutationOptions,
@@ -102,6 +106,10 @@ function createMockAssetKey(patch, document, options = {}) {
 }
 
 function createMockAssetSvg(patch, document, assetId) {
+  if (isArtTextPatch(patch)) {
+    return createMockArtTextAssetSvg(patch, assetId)
+  }
+
   const label = escapeXml(getPatchLabel(patch))
   const prompt = escapeXml(patch.prompt || 'Mock patch asset')
   const sourceText = escapeXml(patch.sourceText || document.id)
@@ -120,6 +128,29 @@ function createMockAssetSvg(patch, document, assetId) {
   <text x="28" y="108" fill="#ccfbf1" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">${prompt}</text>
   <text x="28" y="132" fill="#ccfbf1" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12">${sourceText}</text>
   <text x="28" y="154" fill="#99f6e4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">${escapeXml(assetId)}</text>
+</svg>`
+}
+
+function createMockArtTextAssetSvg(patch, assetId) {
+  const label = escapeXml(getPatchLabel(patch))
+  const sourceText = escapeXml(patch.sourceText || label || '艺术字')
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="cowart-art-text-mock-asset" width="900" height="260" viewBox="0 0 900 260" role="img" aria-label="${label}">
+  <defs>
+    <linearGradient id="cowart-art-text-ice" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eff6ff" />
+      <stop offset="0.32" stop-color="#7dd3fc" />
+      <stop offset="0.68" stop-color="#38bdf8" />
+      <stop offset="1" stop-color="#0f766e" />
+    </linearGradient>
+    <filter id="cowart-art-text-glow" x="-20%" y="-35%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#075985" flood-opacity="0.35" />
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ffffff" flood-opacity="0.72" />
+    </filter>
+  </defs>
+  <rect width="900" height="260" fill="none" />
+  <text x="450" y="158" text-anchor="middle" fill="url(#cowart-art-text-ice)" stroke="#ffffff" stroke-width="10" paint-order="stroke fill" filter="url(#cowart-art-text-glow)" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="118" font-weight="900" letter-spacing="2">${sourceText}</text>
+  <text x="450" y="208" text-anchor="middle" fill="#0369a1" fill-opacity="0.76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="800">mock generated · ${escapeXml(assetId)}</text>
 </svg>`
 }
 
