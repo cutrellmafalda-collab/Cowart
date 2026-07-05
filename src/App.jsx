@@ -1704,13 +1704,14 @@ function CowartHtmlArtboardPreviewControls() {
             选中整张海报
           </button>
         ) : null}
-        <div className="cowart-html-poster-actions">
-          <button type="button" onClick={makePolishedPoster}>
-            做成漂亮测试海报
-          </button>
-          {posterStatus ? <span>{posterStatus}</span> : null}
-        </div>
       </section>
+      <CowartHtmlArtboardPosterWorkbench
+        editor={editor}
+        onMakePolishedPoster={makePolishedPoster}
+        posterStatus={posterStatus}
+        runtimeDocument={runtimeDocument}
+        selectedShape={shape}
+      />
       <CowartHtmlArtboardLayerFocusControls
         editor={editor}
         runtimeDocument={runtimeDocument}
@@ -1770,6 +1771,210 @@ function CowartHtmlArtboardPreviewControls() {
         <CowartHtmlArtboardMutationLog runtimeDocument={runtimeDocument} />
       </details>
     </div>
+  )
+}
+
+function CowartHtmlArtboardPosterWorkbench({
+  editor,
+  onMakePolishedPoster,
+  posterStatus,
+  runtimeDocument,
+  selectedShape
+}) {
+  const [workbenchStatus, setWorkbenchStatus] = useState('')
+  const [backgroundPromptText, setBackgroundPromptText] = useState('')
+  const textLayerShapes = useValue(
+    'selected html artboard workbench text layer shapes',
+    () => findHtmlArtboardTextLayerShapes(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const fusionPatchLayerShapes = useValue(
+    'selected html artboard workbench fusion layer shapes',
+    () => findHtmlArtboardFusionPatchLayerShapes(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const previewShape = useValue(
+    'selected html artboard workbench preview shape',
+    () => findHtmlArtboardPreviewShape(editor, selectedShape.id),
+    [editor, selectedShape.id]
+  )
+  const backgroundAssetUrl = getHtmlArtboardBackgroundAssetUrl(runtimeDocument)
+  const freshness = compareHtmlArtboardPreviewFreshness(runtimeDocument, previewShape)
+  const fusionPatchCount = Array.isArray(runtimeDocument.fusionPatches)
+    ? runtimeDocument.fusionPatches.length
+    : 0
+
+  useEffect(() => {
+    setWorkbenchStatus('')
+    setBackgroundPromptText('')
+  }, [selectedShape.id, runtimeDocument.renderFingerprint])
+
+  async function copyBackgroundPrompt() {
+    const prompt = createBackgroundImagePrompt(runtimeDocument)
+    setBackgroundPromptText(prompt)
+    try {
+      await writeTextToClipboard(prompt)
+      setWorkbenchStatus('底图生图提示词已复制')
+    } catch {
+      setWorkbenchStatus('提示词已生成，可从下方手动复制')
+    }
+  }
+
+  async function importBackgroundImage() {
+    try {
+      const imageImport = await readHtmlArtboardImageImport(
+        'background',
+        runtimeDocument.id,
+        selectedShape.parentId ?? editor.getCurrentPageId()
+      )
+      if (!imageImport) return
+
+      const updatedDocument = attachExternalBackgroundImageToHtmlArtboard(
+        runtimeDocument,
+        {
+          backgroundAssetId: imageImport.assetId,
+          backgroundAssetUrl: imageImport.assetUrl,
+          fileName: imageImport.fileName,
+          relativePath: imageImport.relativePath,
+          mimeType: imageImport.mimeType,
+          fileSize: imageImport.fileSize
+        },
+        {
+          provider: 'browser-file-import',
+          prompt: runtimeDocument.background?.prompt
+        },
+        {
+          mutationOptions: {
+            meta: {
+              source: 'html-artboard-poster-workbench'
+            }
+          }
+        }
+      )
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'import-html-artboard-workbench-background'
+      )
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      editor.select(selectedShape.id)
+      setWorkbenchStatus('真实底图已导入并刷新')
+    } catch {
+      setWorkbenchStatus('导入失败：请选择 PNG / JPG / WebP')
+    }
+  }
+
+  async function createOrRefreshTextLayers() {
+    try {
+      const textLayers = createHtmlArtboardTextLayersFromDocument(runtimeDocument, {
+        recreate: true
+      })
+      const updatedDocument = updateHtmlArtboardTextLayers(runtimeDocument, textLayers)
+
+      writeHtmlArtboardRuntimeDocument(
+        editor,
+        selectedShape,
+        updatedDocument,
+        'create-html-artboard-workbench-text-layers'
+      )
+      upsertHtmlArtboardTextLayerShapes(editor, selectedShape, textLayers)
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, updatedDocument)
+      editor.select(selectedShape.id)
+      setWorkbenchStatus(`已生成 ${textLayers.length} 行可拖文字`)
+    } catch {
+      setWorkbenchStatus('可拖文字生成失败')
+    }
+  }
+
+  async function selectHeadlineForArtText() {
+    let targetTextLayerShape = getPreferredTextLayerShape(editor, selectedShape)
+    if (!targetTextLayerShape) {
+      await createOrRefreshTextLayers()
+      targetTextLayerShape = getPreferredTextLayerShape(editor, selectedShape)
+    }
+
+    if (!targetTextLayerShape) {
+      setWorkbenchStatus('先生成可拖动文字')
+      return
+    }
+
+    editor.select(targetTextLayerShape.id)
+    editor.setCurrentTool('select.idle')
+    setWorkbenchStatus('已选中主标题，可在下方生成艺术字')
+  }
+
+  async function refreshCanvasPreview() {
+    try {
+      await refreshHtmlArtboardCanvasPreview(editor, selectedShape, runtimeDocument)
+      editor.select(selectedShape.id)
+      setWorkbenchStatus('画布预览已刷新')
+    } catch {
+      setWorkbenchStatus('刷新画布预览失败')
+    }
+  }
+
+  return (
+    <section className="cowart-html-poster-workbench" aria-label="海报工作台">
+      <div className="cowart-html-preview-heading">
+        <span>海报工作台</span>
+        <span>{formatCanvasPreviewFreshness(freshness)}</span>
+      </div>
+      <div className="cowart-html-poster-workbench-status">
+        <span className={backgroundAssetUrl ? 'is-ready' : ''}>
+          {backgroundAssetUrl ? '真实底图已就绪' : '先导入真实底图'}
+        </span>
+        <span className={textLayerShapes.length > 0 ? 'is-ready' : ''}>
+          {textLayerShapes.length > 0 ? `${textLayerShapes.length} 行文字可拖动` : '文字还没拆成行'}
+        </span>
+        <span className={fusionPatchCount > 0 ? 'is-ready' : ''}>
+          {fusionPatchCount > 0
+            ? `${fusionPatchCount} 个融合图层`
+            : '还没有艺术字 / 融合图层'}
+        </span>
+        <span className={fusionPatchLayerShapes.length > 0 ? 'is-ready' : ''}>
+          {fusionPatchLayerShapes.length > 0
+            ? `${fusionPatchLayerShapes.length} 个画布融合层`
+            : '融合层还没放到画布'}
+        </span>
+      </div>
+      <div className="cowart-html-poster-workbench-actions">
+        <button type="button" onClick={onMakePolishedPoster}>
+          一键整理版式
+        </button>
+        <button type="button" onClick={copyBackgroundPrompt}>
+          复制底图提示词
+        </button>
+        <button type="button" onClick={importBackgroundImage}>
+          导入真实底图
+        </button>
+        <button type="button" onClick={createOrRefreshTextLayers}>
+          生成可拖文字
+        </button>
+        <button type="button" onClick={selectHeadlineForArtText}>
+          选标题做艺术字
+        </button>
+        <button type="button" onClick={refreshCanvasPreview}>
+          刷新画布
+        </button>
+      </div>
+      {posterStatus || workbenchStatus ? (
+        <p className="cowart-html-poster-workbench-message">
+          {workbenchStatus || posterStatus}
+        </p>
+      ) : (
+        <p className="cowart-html-poster-workbench-note">
+          推荐顺序：先用 Image 生成无字底图，再导入底图，拆文字，最后选主标题做艺术字。
+        </p>
+      )}
+      {backgroundPromptText ? (
+        <details className="cowart-html-poster-workbench-prompt" open>
+          <summary>底图生图提示词</summary>
+          <textarea readOnly rows={6} value={backgroundPromptText} />
+        </details>
+      ) : null}
+    </section>
   )
 }
 
@@ -1978,6 +2183,34 @@ function formatBackgroundType(type) {
   if (type === 'image') return '图片'
   if (type === 'unknown') return '未知'
   return type
+}
+
+function createBackgroundImagePrompt(runtimeDocument) {
+  const width = runtimeDocument.width ?? 720
+  const height = runtimeDocument.height ?? 1280
+  const backgroundPrompt =
+    typeof runtimeDocument.background?.prompt === 'string' && runtimeDocument.background.prompt
+      ? runtimeDocument.background.prompt
+      : 'fresh no-text poster background'
+
+  return [
+    `生成一张 ${width}×${height} 竖版海报底图。`,
+    `主题：${backgroundPrompt}`,
+    '画面要求：真实商业海报质感，清爽、有层次、有光影，不要像占位图。',
+    '构图要求：左侧和中下部保留干净文字空间，主体装饰偏右侧和底部。',
+    '重要限制：不要生成任何文字、字母、Logo、二维码、水印或假排版。',
+    '用途：Cowart HTML Artboard 底图，文字会由可编辑 HTML / 可拖动文字层单独叠加。'
+  ].join('\n')
+}
+
+function getPreferredTextLayerShape(editor, selectedShape) {
+  const textLayerShapes = findHtmlArtboardTextLayerShapes(editor, selectedShape.id)
+  return (
+    textLayerShapes.find((shape) => shape.meta?.dataNode === 'headline-line-1') ??
+    textLayerShapes.find((shape) => String(shape.meta?.dataNode ?? '').includes('headline')) ??
+    textLayerShapes[0] ??
+    null
+  )
 }
 
 function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selectedShape }) {
