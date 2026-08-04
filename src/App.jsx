@@ -1803,6 +1803,35 @@ function CowartHtmlArtboardPosterWorkbench({
   const fusionPatchCount = Array.isArray(runtimeDocument.fusionPatches)
     ? runtimeDocument.fusionPatches.length
     : 0
+  const directorStep = getHtmlArtboardDirectorStep({
+    backgroundAssetUrl,
+    freshness,
+    fusionPatchCount,
+    fusionPatchLayerCount: fusionPatchLayerShapes.length,
+    textLayerCount: textLayerShapes.length
+  })
+  const workflowSteps = [
+    {
+      label: '底图',
+      ready: Boolean(backgroundAssetUrl),
+      value: backgroundAssetUrl ? '已导入' : '待导入'
+    },
+    {
+      label: '文字',
+      ready: textLayerShapes.length > 0,
+      value: textLayerShapes.length > 0 ? `${textLayerShapes.length} 行可拖` : '待拆行'
+    },
+    {
+      label: '艺术字',
+      ready: fusionPatchCount > 0,
+      value: fusionPatchCount > 0 ? `${fusionPatchCount} 个图层` : '待生成'
+    },
+    {
+      label: '预览',
+      ready: freshness?.status === 'current',
+      value: formatCanvasPreviewFreshness(freshness)
+    }
+  ]
 
   useEffect(() => {
     setWorkbenchStatus('')
@@ -1916,47 +1945,53 @@ function CowartHtmlArtboardPosterWorkbench({
   }
 
   return (
-    <section className="cowart-html-poster-workbench" aria-label="海报工作台">
-      <div className="cowart-html-preview-heading">
-        <span>海报工作台</span>
-        <span>{formatCanvasPreviewFreshness(freshness)}</span>
+    <section className="cowart-html-poster-workbench" aria-label="HTML Artboard 导演台">
+      <div className="cowart-html-director-hero">
+        <div>
+          <span className="cowart-html-director-kicker">HTML Artboard</span>
+          <strong>导演台</strong>
+        </div>
+        <span className={`cowart-html-director-badge is-${freshness?.status ?? 'missing'}`}>
+          {formatCanvasPreviewFreshness(freshness)}
+        </span>
       </div>
-      <div className="cowart-html-poster-workbench-status">
-        <span className={backgroundAssetUrl ? 'is-ready' : ''}>
-          {backgroundAssetUrl ? '真实底图已就绪' : '先导入真实底图'}
-        </span>
-        <span className={textLayerShapes.length > 0 ? 'is-ready' : ''}>
-          {textLayerShapes.length > 0 ? `${textLayerShapes.length} 行文字可拖动` : '文字还没拆成行'}
-        </span>
-        <span className={fusionPatchCount > 0 ? 'is-ready' : ''}>
-          {fusionPatchCount > 0
-            ? `${fusionPatchCount} 个融合图层`
-            : '还没有艺术字 / 融合图层'}
-        </span>
-        <span className={fusionPatchLayerShapes.length > 0 ? 'is-ready' : ''}>
-          {fusionPatchLayerShapes.length > 0
-            ? `${fusionPatchLayerShapes.length} 个画布融合层`
-            : '融合层还没放到画布'}
-        </span>
+      <div className="cowart-html-director-next">
+        <span>下一步</span>
+        <strong>{directorStep.title}</strong>
+        <p>{directorStep.body}</p>
+      </div>
+      <div className="cowart-html-director-progress" aria-label="制作进度">
+        {workflowSteps.map((step, index) => (
+          <div
+            className={`cowart-html-director-step${step.ready ? ' is-ready' : ''}`}
+            key={step.label}
+          >
+            <span>{index + 1}</span>
+            <div>
+              <strong>{step.label}</strong>
+              <small>{step.value}</small>
+            </div>
+          </div>
+        ))}
       </div>
       <div className="cowart-html-poster-workbench-actions">
         <button type="button" onClick={onMakePolishedPoster}>
-          一键整理版式
+          整理海报
         </button>
         <button type="button" onClick={copyBackgroundPrompt}>
-          复制底图提示词
+          底图提示词
         </button>
         <button type="button" onClick={importBackgroundImage}>
-          导入真实底图
+          导入底图
         </button>
         <button type="button" onClick={createOrRefreshTextLayers}>
-          生成可拖文字
+          拆成文字层
         </button>
         <button type="button" onClick={selectHeadlineForArtText}>
-          选标题做艺术字
+          选主标题
         </button>
         <button type="button" onClick={refreshCanvasPreview}>
-          刷新画布
+          刷新预览
         </button>
       </div>
       {posterStatus || workbenchStatus ? (
@@ -1965,7 +2000,7 @@ function CowartHtmlArtboardPosterWorkbench({
         </p>
       ) : (
         <p className="cowart-html-poster-workbench-note">
-          推荐顺序：先用 Image 生成无字底图，再导入底图，拆文字，最后选主标题做艺术字。
+          从上到下走：先定底图，再拆文字，最后把主标题做成艺术字。
         </p>
       )}
       {backgroundPromptText ? (
@@ -2211,6 +2246,54 @@ function getPreferredTextLayerShape(editor, selectedShape) {
     textLayerShapes[0] ??
     null
   )
+}
+
+function getHtmlArtboardDirectorStep({
+  backgroundAssetUrl,
+  freshness,
+  fusionPatchCount,
+  fusionPatchLayerCount,
+  textLayerCount
+}) {
+  if (!backgroundAssetUrl) {
+    return {
+      title: '先做一张无字底图',
+      body: '复制提示词给 Image 生图，导入后文字会继续保持可编辑。'
+    }
+  }
+
+  if (textLayerCount === 0) {
+    return {
+      title: '把 HTML 文字拆成可拖图层',
+      body: '每一行文字都能在画布里单独移动、缩放，再进入艺术字流程。'
+    }
+  }
+
+  if (fusionPatchCount === 0) {
+    return {
+      title: '选主标题做艺术字',
+      body: '先选中主标题，再用下方工具复制生图任务或导入生成图。'
+    }
+  }
+
+  if (fusionPatchLayerCount === 0) {
+    return {
+      title: '把艺术字放回画布',
+      body: '生成或导入艺术字图层后，刷新预览就能看到最终合成。'
+    }
+  }
+
+  if (freshness?.status !== 'current') {
+    return {
+      title: '刷新画布预览',
+      body: '内容已经变化，刷新后缩略图会同步最新底图、文字和艺术字。'
+    }
+  }
+
+  return {
+    title: '可以导出或继续打磨',
+    body: '现在已经是可编辑 HTML、可拖文字、可融合图层的活海报。'
+  }
 }
 
 function CowartHtmlArtboardBackgroundSummary({ editor, runtimeDocument, selectedShape }) {
